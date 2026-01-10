@@ -1,0 +1,9 @@
+import { ExcelViewer } from "@/components/excel-viewer"
+
+export default function Home() {
+  return (
+    <main className="min-h-screen bg-background">
+      <ExcelViewer />
+    </main>
+  )
+}
