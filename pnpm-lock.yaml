@@ -137,6 +137,9 @@ importers:
       next-themes:
         specifier: ^0.4.6
         version: 0.4.6(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
+      parallel-web:
+        specifier: ^0.2.4
+        version: 0.2.4
       react:
         specifier: 19.2.0
         version: 19.2.0
@@ -2135,6 +2138,9 @@ packages:
 
   package-json-from-dist@1.0.1:
     resolution: {integrity: sha512-UEZIS3/by4OC8vL3P2dTXRETpebLI2NiI5vIrjaD/5UtrkFX/tNbwjTSRAGC/+7CAo2pIcBaRgWmcBBHcsaCIw==}
+
+  parallel-web@0.2.4:
+    resolution: {integrity: sha512-684TtVFf0wvyZ83FMrhxX1Qg0+PDjsB7bPu0SXBCRVywxSeOloFIKHPKiAsAKWpDgAz3ok/bZmd2CAXImqH3Iw==}
 
   parse-entities@4.0.2:
     resolution: {integrity: sha512-GG2AQYWoLgL877gQIKeRPGO1xF9+eG1ujIb5soS5gPvLQ1y2o8FL90w2QWNdf9I361Mpp7726c+lj3U0qK1uGw==}
@@ -4624,6 +4630,8 @@ snapshots:
       wrappy: 1.0.2
 
   package-json-from-dist@1.0.1: {}
+
+  parallel-web@0.2.4: {}
 
   parse-entities@4.0.2:
     dependencies:

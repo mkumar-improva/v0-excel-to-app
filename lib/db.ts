@@ -270,13 +270,17 @@ export function createAIResponse(
   entryId: number,
   prompt: string,
   response: string,
-  model?: string
+  model?: string,
+  inputTokens?: number,
+  outputTokens?: number,
+  totalTokens?: number,
+  estimatedCost?: number
 ): AIResponse {
   const database = getDb()
   const stmt = database.prepare(
-    "INSERT INTO ai_responses (entry_id, prompt, response, model) VALUES (?, ?, ?, ?)"
+    "INSERT INTO ai_responses (entry_id, prompt, response, model, input_tokens, output_tokens, total_tokens, estimated_cost) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
   )
-  const result = stmt.run(entryId, prompt, response, model || null)
+  const result = stmt.run(entryId, prompt, response, model || null, inputTokens || null, outputTokens || null, totalTokens || null, estimatedCost || null)
   return getAIResponseById(result.lastInsertRowid as number)!
 }
 

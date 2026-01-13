@@ -9,6 +9,8 @@ const projectRoutes = require('./routes/project.routes');
 const fileRoutes = require('./routes/file.routes');
 const entryRoutes = require('./routes/entry.routes');
 const responseRoutes = require('./routes/response.routes');
+const searchRoutes = require('./routes/search.routes');
+
 
 // Initialize database
 require('./config/database');
@@ -35,6 +37,8 @@ app.use('/api/projects', projectRoutes);
 app.use('/api', fileRoutes);
 app.use('/api/entries', entryRoutes);
 app.use('/api', responseRoutes);
+app.use('/api', searchRoutes);
+
 
 // Error handling
 app.use(notFoundHandler);

@@ -25,6 +25,12 @@ export function PromptDialog({ open, onOpenChange, prompt, rowData, initialTab =
   const [aiResponse, setAiResponse] = useState<string>("")
   const [activeTab, setActiveTab] = useState<string>("prompt")
   const [latestResponse, setLatestResponse] = useState<AIResponse | null>(null)
+  const [tokenUsage, setTokenUsage] = useState<{
+    inputTokens: number
+    outputTokens: number
+    totalTokens: number
+    estimatedCost: number
+  } | undefined>()
   const processingRef = useRef(false)
 
   // Helper to parse response
@@ -61,9 +67,20 @@ export function PromptDialog({ open, onOpenChange, prompt, rowData, initialTab =
         const latest = responses.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
         setAiResponse(latest.response)
         setLatestResponse(latest)
+
+        // Load token usage if available
+        if (latest.input_tokens || latest.output_tokens) {
+          setTokenUsage({
+            inputTokens: latest.input_tokens || 0,
+            outputTokens: latest.output_tokens || 0,
+            totalTokens: latest.total_tokens || 0,
+            estimatedCost: latest.estimated_cost || 0
+          })
+        }
       } else {
         setAiResponse("No response found.")
         setLatestResponse(null)
+        setTokenUsage(undefined)
       }
     } catch (err) {
       console.error(err)
@@ -73,16 +90,29 @@ export function PromptDialog({ open, onOpenChange, prompt, rowData, initialTab =
     }
   }
 
-  const saveResponse = async (fullResponse: string, usedPrompt: string) => {
+  const saveResponse = async (fullResponse: string, usedPrompt: string, tokenUsage?: {
+    inputTokens: number
+    outputTokens: number
+    totalTokens: number
+    estimatedCost: number
+  }) => {
     const entryId = rowData?._entryId as number | undefined
     if (!entryId) return
 
     try {
-      const resp = await api.entries.createResponse(entryId, {
+      const payload = {
         prompt: usedPrompt,
         response: fullResponse,
-        model: "gemini-3-pro-preview"
-      })
+        model: "gemini-3-pro-preview",
+        input_tokens: tokenUsage?.inputTokens,
+        output_tokens: tokenUsage?.outputTokens,
+        total_tokens: tokenUsage?.totalTokens,
+        estimated_cost: tokenUsage?.estimatedCost
+      }
+
+      console.log('📤 Frontend: Sending to backend API:', payload)
+
+      const resp = await api.entries.createResponse(entryId, payload)
       setLatestResponse(resp)
       toast.success("Response saved to database")
     } catch (err) {
@@ -101,6 +131,12 @@ export function PromptDialog({ open, onOpenChange, prompt, rowData, initialTab =
     setActiveTab("response")
 
     let fullResponse = ""
+    let tokenUsage: {
+      inputTokens: number
+      outputTokens: number
+      totalTokens: number
+      estimatedCost: number
+    } | undefined
 
     try {
       const response = await fetch("/api/generate", {
@@ -113,6 +149,28 @@ export function PromptDialog({ open, onOpenChange, prompt, rowData, initialTab =
         const errorText = await response.text()
         toast.error(`Generation failed: ${errorText || response.statusText}`)
         throw new Error("Failed to generate response")
+      }
+
+      // Extract token usage from headers
+      const inputTokens = parseInt(response.headers.get("X-Input-Tokens") || "0", 10)
+      const outputTokens = parseInt(response.headers.get("X-Output-Tokens") || "0", 10)
+      const totalTokens = parseInt(response.headers.get("X-Total-Tokens") || "0", 10)
+      const estimatedCost = parseFloat(response.headers.get("X-Estimated-Cost") || "0")
+
+      // Debug: Log extracted values
+      console.log('🔍 Frontend: Extracted token usage from headers:')
+      console.log('   X-Input-Tokens header:', response.headers.get("X-Input-Tokens"))
+      console.log('   X-Output-Tokens header:', response.headers.get("X-Output-Tokens"))
+      console.log('   X-Total-Tokens header:', response.headers.get("X-Total-Tokens"))
+      console.log('   X-Estimated-Cost header:', response.headers.get("X-Estimated-Cost"))
+      console.log('   Parsed values:', { inputTokens, outputTokens, totalTokens, estimatedCost })
+
+      if (inputTokens > 0 || outputTokens > 0) {
+        tokenUsage = { inputTokens, outputTokens, totalTokens, estimatedCost }
+        setTokenUsage(tokenUsage)
+        console.log('✅ Frontend: Token usage object created:', tokenUsage)
+      } else {
+        console.warn('⚠️  Frontend: No token usage detected (all zeros)')
       }
 
       const reader = response.body?.getReader()
@@ -129,7 +187,7 @@ export function PromptDialog({ open, onOpenChange, prompt, rowData, initialTab =
       }
 
       // Save to backend after complete
-      await saveResponse(fullResponse, activePrompt)
+      await saveResponse(fullResponse, activePrompt, tokenUsage)
 
     } catch (error) {
       console.error("Error generating AI response:", error)
@@ -206,7 +264,8 @@ export function PromptDialog({ open, onOpenChange, prompt, rowData, initialTab =
               <pre className="text-sm whitespace-pre-wrap font-mono">{prompt}</pre>
             </ScrollArea>
 
-            <div className="flex gap-2 mt-4 shrink-0">
+            <div className="flex flex-row gap-32 justify-between mt-4">
+
               <Button onClick={handleCopyPrompt} variant="outline" className="flex-1 bg-transparent">
                 Copy Prompt
               </Button>
@@ -237,6 +296,7 @@ export function PromptDialog({ open, onOpenChange, prompt, rowData, initialTab =
                     onApprove={handleApprove}
                     onReiterate={handleReiterate}
                     status={latestResponse?.status}
+                    tokenUsage={tokenUsage}
                   />
                 </div>
               ) : (

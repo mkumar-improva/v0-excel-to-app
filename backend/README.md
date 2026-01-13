@@ -7,6 +7,7 @@ A standalone Node.js + Express backend server for the Excel to App project.
 - **SQLite Database** - Hierarchical structure: Projects → Excel Files → Entries → AI Responses
 - **REST API** - Full CRUD operations for all entities
 - **File Upload** - Excel file upload with automatic entry creation
+- **Web Search API** - Parallel AI integration for enhanced search capabilities
 - **CORS Enabled** - Configured for frontend communication
 - **Request Validation** - Express-validator for data validation
 - **Error Handling** - Centralized error handling middleware
@@ -40,7 +41,10 @@ DB_PATH=./data/app.sqlite
 UPLOAD_DIR=./data/uploads
 CORS_ORIGIN=http://localhost:3000
 MAX_FILE_SIZE=10485760
+PARALLEL_API_KEY=your_parallel_api_key_here
 ```
+
+**Note:** Get your Parallel API key from [https://platform.parallel.ai](https://platform.parallel.ai)
 
 ## Running the Server
 
@@ -93,6 +97,13 @@ PUT    /api/responses/:id         - Update response
 DELETE /api/responses/:id         - Delete response
 ```
 
+### Search API
+
+```
+POST   /api/search                - Execute web search
+GET    /api/search/health         - Check search service status
+```
+
 ### Health Check
 
 ```
@@ -125,6 +136,18 @@ curl -X POST http://localhost:5000/api/entries/1/responses \
     "prompt": "Generate summary",
     "response": "AI generated response...",
     "model": "gemini-2.0-flash"
+  }'
+```
+
+### Execute Web Search
+
+```bash
+curl -X POST http://localhost:5000/api/search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "When was the United Nations established?",
+    "maxResults": 10,
+    "maxCharsPerResult": 10000
   }'
 ```
 

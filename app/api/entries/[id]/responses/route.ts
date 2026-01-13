@@ -44,7 +44,7 @@ export async function POST(
             )
         }
 
-        const { prompt, response, model } = await request.json()
+        const { prompt, response, model, input_tokens, output_tokens, total_tokens, estimated_cost } = await request.json()
 
         if (!prompt || !response) {
             return NextResponse.json(
@@ -53,7 +53,16 @@ export async function POST(
             )
         }
 
-        const aiResponse = createAIResponse(entryId, prompt, response, model)
+        const aiResponse = createAIResponse(
+            entryId,
+            prompt,
+            response,
+            model,
+            input_tokens,
+            output_tokens,
+            total_tokens,
+            estimated_cost
+        )
         return NextResponse.json({ response: aiResponse }, { status: 201 })
     } catch (error) {
         console.error("Error creating AI response:", error)

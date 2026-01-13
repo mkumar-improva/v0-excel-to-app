@@ -122,6 +122,10 @@ function initializeTables() {
         prompt TEXT NOT NULL,
         response TEXT NOT NULL,
         model TEXT,
+        input_tokens INTEGER,
+        output_tokens INTEGER,
+        total_tokens INTEGER,
+        estimated_cost REAL,
         status TEXT DEFAULT 'pending',
         approved_at TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -134,7 +138,11 @@ function initializeTables() {
         const columnsToAdd = [
           'ALTER TABLE ai_responses ADD COLUMN status TEXT DEFAULT "pending"',
           'ALTER TABLE ai_responses ADD COLUMN approved_at TEXT',
-          'ALTER TABLE ai_responses ADD COLUMN model TEXT' // Ensure model exists too (was previously added in create but maybe missing in existing DBs)
+          'ALTER TABLE ai_responses ADD COLUMN model TEXT',
+          'ALTER TABLE ai_responses ADD COLUMN input_tokens INTEGER',
+          'ALTER TABLE ai_responses ADD COLUMN output_tokens INTEGER',
+          'ALTER TABLE ai_responses ADD COLUMN total_tokens INTEGER',
+          'ALTER TABLE ai_responses ADD COLUMN estimated_cost REAL'
         ];
 
         columnsToAdd.forEach(sql => {
@@ -142,6 +150,8 @@ function initializeTables() {
             // Ignore "duplicate column" errors
           });
         });
+
+        console.log('✅ Token usage columns migration applied');
       }
     });
 

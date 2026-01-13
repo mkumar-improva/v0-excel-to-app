@@ -1,10 +1,17 @@
 const { run, get, all } = require('../config/database');
 
 class ResponseModel {
-    static async create(entryId, prompt, response, model = null) {
+    static async create(entryId, prompt, response, model = null, inputTokens = null, outputTokens = null, totalTokens = null, estimatedCost = null) {
+        // Debug: Log what we're receiving
+        console.log('📊 ResponseModel.create received:');
+        console.log('   Input Tokens:', inputTokens);
+        console.log('   Output Tokens:', outputTokens);
+        console.log('   Total Tokens:', totalTokens);
+        console.log('   Estimated Cost:', estimatedCost);
+
         const result = await run(
-            "INSERT INTO ai_responses (entry_id, prompt, response, model, status) VALUES (?, ?, ?, ?, 'pending')",
-            [entryId, prompt, response, model]
+            "INSERT INTO ai_responses (entry_id, prompt, response, model, input_tokens, output_tokens, total_tokens, estimated_cost, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
+            [entryId, prompt, response, model, inputTokens, outputTokens, totalTokens, estimatedCost]
         );
         return this.findById(result.lastID);
     }

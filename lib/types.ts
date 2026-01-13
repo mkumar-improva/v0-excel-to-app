@@ -65,8 +65,27 @@ export interface AIResponse {
   prompt: string
   response: string
   model?: string
+  input_tokens?: number
+  output_tokens?: number
+  total_tokens?: number
+  estimated_cost?: number
   status?: 'pending' | 'approved' | 'rejected'
   approved_at?: string
   created_at: string
   updated_at: string
+}
+
+export interface SourceReference {
+  source_name: string
+  url: string
+}
+
+export interface ResponseData {
+  original_input?: Record<string, any>
+  validated_data?: Record<string, any>
+  status?: string
+  changes_detected?: boolean
+  confidence_score?: number
+  data_quality_notes?: string
+  source_references?: SourceReference[]
 }

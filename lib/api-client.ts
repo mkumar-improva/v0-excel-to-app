@@ -85,7 +85,15 @@ export const api = {
             const res = await fetchAPI<{ responses: AIResponse[] }>(`/entries/${id}/responses`)
             return res.responses
         },
-        createResponse: async (id: number, data: { prompt: string; response: string; model?: string }) => {
+        createResponse: async (id: number, data: {
+            prompt: string;
+            response: string;
+            model?: string;
+            input_tokens?: number;
+            output_tokens?: number;
+            total_tokens?: number;
+            estimated_cost?: number;
+        }) => {
             const res = await fetchAPI<{ response: AIResponse }>(`/entries/${id}/responses`, {
                 method: "POST",
                 body: JSON.stringify(data),

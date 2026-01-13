@@ -3,23 +3,14 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { ExternalLink, CheckCircle2, AlertTriangle, ArrowRight, Activity } from "lucide-react"
+import { ExternalLink, CheckCircle2, AlertTriangle, ArrowRight, Activity, Globe, Monitor } from "lucide-react"
 import { cn } from "@/lib/utils"
-
-interface SourceReference {
-    source_name: string
-    url: string
-}
-
-interface ResponseData {
-    original_input?: Record<string, any>
-    validated_data?: Record<string, any>
-    status?: string
-    changes_detected?: boolean
-    confidence_score?: number
-    data_quality_notes?: string
-    source_references?: SourceReference[]
-}
+import { ResponseData } from "@/lib/types"
+import { isSimilarValue } from "@/lib/data-comparison"
+import { ApprovalWorkspace } from "./approval-workspace"
+import { useState } from "react"
+import { Button } from "@/components/ui/button"
+import { ThumbsUp, RefreshCw } from "lucide-react"
 
 interface ResponseViewerProps {
     data: ResponseData
@@ -27,14 +18,39 @@ interface ResponseViewerProps {
     onApprove?: () => void
     onReiterate?: () => void
     status?: 'pending' | 'approved' | 'rejected'
+    tokenUsage?: {
+        inputTokens: number
+        outputTokens: number
+        totalTokens: number
+        estimatedCost: number
+    }
 }
 
-import { Button } from "@/components/ui/button"
-import { ThumbsUp, RefreshCw } from "lucide-react"
+export function ResponseViewer({ data, rawJson, onApprove, onReiterate, status = 'pending', tokenUsage }: ResponseViewerProps) {
+    const [showApprovalWorkspace, setShowApprovalWorkspace] = useState(false)
 
-export function ResponseViewer({ data, rawJson, onApprove, onReiterate, status = 'pending' }: ResponseViewerProps) {
     // If data doesn't look structured enough (missing key fields), fallback to raw JSON
     const isStructured = data.validated_data || data.data_quality_notes || data.source_references
+
+    console.log(status)
+
+    if (showApprovalWorkspace) {
+        return (
+            <ApprovalWorkspace
+                data={data}
+                onClose={() => setShowApprovalWorkspace(false)}
+                onApprove={() => {
+                    onApprove?.()
+                    setShowApprovalWorkspace(false)
+                }}
+                onReiterate={() => {
+                    onReiterate?.()
+                    setShowApprovalWorkspace(false)
+                }}
+                isApproved={status === 'approved'}
+            />
+        )
+    }
 
     if (!isStructured) {
         return (
@@ -61,7 +77,8 @@ export function ResponseViewer({ data, rawJson, onApprove, onReiterate, status =
     const comparisonRows = Array.from(allKeys).map(key => {
         const original = data.original_input?.[key]
         const validated = data.validated_data?.[key]
-        const hasChanged = JSON.stringify(original) !== JSON.stringify(validated)
+        // Use fuzzy comparison instead of strict JSON comparison
+        const hasChanged = !isSimilarValue(original, validated, key)
 
         return { key, original, validated, hasChanged }
     })
@@ -84,16 +101,38 @@ export function ResponseViewer({ data, rawJson, onApprove, onReiterate, status =
                     )}
                 </div>
 
-                <div className="flex items-center gap-2 text-sm">
-                    <span className="text-muted-foreground">Confidence:</span>
-                    <span className={cn(
-                        "font-bold",
-                        confidencePercent >= 90 ? "text-green-600 dark:text-green-400" :
-                            confidencePercent >= 70 ? "text-yellow-600 dark:text-yellow-400" :
-                                "text-red-600 dark:text-red-400"
-                    )}>
-                        {confidencePercent}%
-                    </span>
+                <div className="flex items-center gap-6 text-sm">
+                    <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">Confidence:</span>
+                        <span className={cn(
+                            "font-bold",
+                            confidencePercent >= 90 ? "text-green-600 dark:text-green-400" :
+                                confidencePercent >= 70 ? "text-yellow-600 dark:text-yellow-400" :
+                                    "text-red-600 dark:text-red-400"
+                        )}>
+                            {confidencePercent}%
+                        </span>
+                    </div>
+
+                    {tokenUsage && (
+                        <div className="flex items-center gap-4 border-l pl-6">
+                            <div className="flex flex-col">
+                                <span className="text-xs text-muted-foreground">Tokens</span>
+                                <span className="font-mono text-xs font-medium">
+                                    {tokenUsage.totalTokens.toLocaleString()}
+                                    <span className="text-muted-foreground ml-1">
+                                        ({tokenUsage.inputTokens.toLocaleString()} in / {tokenUsage.outputTokens.toLocaleString()} out)
+                                    </span>
+                                </span>
+                            </div>
+                            <div className="flex flex-col">
+                                <span className="text-xs text-muted-foreground">Cost</span>
+                                <span className="font-mono text-xs font-bold text-primary">
+                                    ${tokenUsage.estimatedCost.toFixed(6)}
+                                </span>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -130,8 +169,8 @@ export function ResponseViewer({ data, rawJson, onApprove, onReiterate, status =
                                         <div key={key} className={cn(
                                             "grid grid-cols-12 p-3 text-sm items-center transition-colors",
                                             hasChanged
-                                                ? "bg-amber-50/50 dark:bg-amber-900/10 hover:bg-amber-100/50 dark:hover:bg-amber-900/20"
-                                                : "bg-green-50/30 dark:bg-green-900/10 hover:bg-green-100/30 dark:hover:bg-green-900/20"
+                                                ? "bg-warning/20 hover:bg-warning/30"
+                                                : "bg-success/20 hover:bg-success/30"
                                         )}>
                                             <div className="col-span-3 sm:col-span-3 font-medium text-muted-foreground truncate" title={key}>
                                                 {key}
@@ -144,7 +183,7 @@ export function ResponseViewer({ data, rawJson, onApprove, onReiterate, status =
                                             </div>
                                             <div className={cn(
                                                 "col-span-4 sm:col-span-4 font-medium truncate",
-                                                hasChanged ? "text-amber-700 dark:text-amber-400" : "text-foreground"
+                                                hasChanged ? "text-warning" : "text-foreground"
                                             )} title={String(validated ?? "")}>
                                                 {validated ?? <span className="italic text-xs opacity-50">Empty</span>}
                                             </div>
@@ -192,23 +231,42 @@ export function ResponseViewer({ data, rawJson, onApprove, onReiterate, status =
             {/* Action Buttons */}
             <div className="p-4 border-t bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/60 flex justify-end gap-3 shrink-0 z-10">
                 {status === 'approved' ? (
-                    <div className="flex items-center text-green-600 font-medium px-4 py-2 bg-green-50 rounded-md border border-green-200">
-                        <CheckCircle2 className="mr-2 h-5 w-5" />
-                        Approved
-                    </div>
+                    <>
+                        <Button
+                            variant="outline"
+                            onClick={() => setShowApprovalWorkspace(true)}
+                            className="bg-muted hover:bg-muted/80 hover:text-foreground transition-all mr-auto cursor-pointer"
+                        >
+                            <Monitor className="mr-2 h-4 w-4" />
+                            Verify with Sources
+                        </Button>
+                        <div className="flex items-center text-success font-medium px-4 py-2 bg-success/10 rounded-md border border-success/20">
+                            <CheckCircle2 className="mr-2 h-5 w-5" />
+                            Approved
+                        </div>
+                    </>
                 ) : (
                     <>
                         <Button
                             variant="outline"
+                            onClick={() => setShowApprovalWorkspace(true)}
+                            className="bg-muted hover:bg-muted/80 hover:text-foreground transition-all mr-auto cursor-pointer"
+                        >
+                            <Monitor className="mr-2 h-4 w-4" />
+                            Verify with Sources
+                        </Button>
+                        <Button
+                            variant="outline"
                             onClick={onReiterate}
-                            className="bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-200 hover:border-orange-300 transition-all"
+                            className="text-warning border-warning/30 hover:bg-warning/10 hover:text-warning hover:border-warning transition-all"
                         >
                             <RefreshCw className="mr-2 h-4 w-4" />
                             Re-iterate with more sources
                         </Button>
+
                         <Button
                             onClick={onApprove}
-                            className="bg-green-600 hover:bg-green-700 text-white shadow-sm hover:shadow transition-all"
+                            className="bg-success hover:bg-success/90 text-success-foreground shadow-sm hover:shadow transition-all"
                         >
                             <ThumbsUp className="mr-2 h-4 w-4" />
                             Approve
@@ -216,6 +274,6 @@ export function ResponseViewer({ data, rawJson, onApprove, onReiterate, status =
                     </>
                 )}
             </div>
-        </div>
+        </div >
     )
 }
