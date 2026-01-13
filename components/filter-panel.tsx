@@ -54,7 +54,7 @@ export function FilterPanel({ columns, rows, filters, onFilterChange }: FilterPa
         {activeFilterCount > 0 && (
           <button
             onClick={clearAllFilters}
-            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer hover:underline"
           >
             Clear all ({activeFilterCount})
           </button>

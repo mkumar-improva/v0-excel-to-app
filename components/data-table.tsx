@@ -15,9 +15,12 @@ interface DataTableProps {
 export function DataTable({ columns, rows, promptTemplate }: DataTableProps) {
   const [selectedRow, setSelectedRow] = useState<Record<string, unknown> | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [initialDialogTab, setInitialDialogTab] = useState<"prompt" | "response">("prompt")
 
   const handleGeneratePrompt = (row: Record<string, unknown>) => {
     setSelectedRow(row)
+    const hasResponse = (row._responseCount as number) > 0
+    setInitialDialogTab(hasResponse ? "response" : "prompt")
     setDialogOpen(true)
   }
 
@@ -41,54 +44,66 @@ export function DataTable({ columns, rows, promptTemplate }: DataTableProps) {
         </div>
 
         <div className="flex-1 overflow-hidden relative">
-          {/* Fixed Header */}
-          <div className="overflow-x-auto border-b border-border">
-            <Table className="min-w-max">
-              <TableHeader>
-                <TableRow className="bg-muted/50 hover:bg-muted/50">
-                  <TableHead className="w-[100px] sticky left-0 bg-muted/50 z-10">Actions</TableHead>
-                  {columns.map((column) => (
-                    <TableHead key={column} className="min-w-[150px]">
-                      {column}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-            </Table>
-          </div>
-
-          {/* Scrollable Body */}
-          <ScrollArea className="h-[calc(100%-0px)]" style={{ height: "calc(100% - 41px)" }}>
-            <div className="overflow-x-auto">
+          <ScrollArea className="h-full w-full">
+            <div className="w-full">
               <Table className="min-w-max">
+                <TableHeader>
+                  <TableRow className="bg-muted/50 hover:bg-muted/50">
+                    <TableHead className="w-[100px] sticky left-0 bg-muted/50 z-10">Actions</TableHead>
+                    {columns.map((column) => (
+                      <TableHead key={column} className="min-w-[150px]">
+                        {column}
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
                 <TableBody>
-                  {rows.map((row, index) => (
-                    <TableRow key={index} className="hover:bg-muted/30">
-                      <TableCell className="w-[100px] sticky left-0 bg-card z-10">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleGeneratePrompt(row)}
-                          className="text-xs"
-                        >
-                          <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M13 10V3L4 14h7v7l9-11h-7z"
-                            />
-                          </svg>
-                          Generate
-                        </Button>
-                      </TableCell>
-                      {columns.map((column) => (
-                        <TableCell key={column} className="max-w-[300px] min-w-[150px] truncate">
-                          {String(row[column] ?? "")}
+                  {rows.map((row, index) => {
+                    const hasResponse = (row._responseCount as number) > 0
+                    return (
+                      <TableRow
+                        key={index}
+                        className={`group hover:bg-muted/50 cursor-pointer transition-colors ${hasResponse ? "bg-green-50/50 dark:bg-green-900/10" : ""}`}
+                        onClick={() => handleGeneratePrompt(row)}
+                      >
+                        <TableCell className="w-[100px] sticky left-0 bg-card z-10 transition-colors group-hover:bg-muted/50">
+                          <Button
+                            size="sm"
+                            variant={hasResponse ? "secondary" : "outline"}
+                            onClick={() => handleGeneratePrompt(row)}
+                            className={`text-xs ${hasResponse ? "text-green-600 dark:text-green-400" : ""}`}
+                          >
+                            {hasResponse ? (
+                              <>
+                                <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                </svg>
+                                View
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M13 10V3L4 14h7v7l9-11h-7z"
+                                  />
+                                </svg>
+                                Generate
+                              </>
+                            )}
+                          </Button>
                         </TableCell>
-                      ))}
-                    </TableRow>
-                  ))}
+                        {columns.map((column) => (
+                          <TableCell key={column} className="max-w-[300px] min-w-[150px] truncate">
+                            {String(row[column] ?? "")}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    )
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -103,6 +118,7 @@ export function DataTable({ columns, rows, promptTemplate }: DataTableProps) {
         onOpenChange={setDialogOpen}
         prompt={selectedRow ? generatePromptFromTemplate(selectedRow) : ""}
         rowData={selectedRow}
+        initialTab={initialDialogTab}
       />
     </>
   )

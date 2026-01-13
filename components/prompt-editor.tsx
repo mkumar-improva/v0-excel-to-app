@@ -14,6 +14,7 @@ export function PromptEditor({ template, onTemplateChange, columns }: PromptEdit
   const [localTemplate, setLocalTemplate] = useState(template)
   const [isPending, startTransition] = useTransition()
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 
   // Sync from parent when template changes externally (e.g., loading a session)
   useEffect(() => {
@@ -47,10 +48,29 @@ export function PromptEditor({ template, onTemplateChange, columns }: PromptEdit
 
   const insertPlaceholder = (column: string) => {
     const placeholder = `{{${column}}}`
-    const newTemplate = localTemplate + placeholder
-    setLocalTemplate(newTemplate)
-    startTransition(() => {
-      onTemplateChange(newTemplate)
+    const textarea = textareaRef.current
+
+    if (!textarea) {
+      const newTemplate = localTemplate + placeholder
+      setLocalTemplate(newTemplate)
+      startTransition(() => onTemplateChange(newTemplate))
+      return
+    }
+
+    const { selectionStart, selectionEnd } = textarea
+    const before = localTemplate.slice(0, selectionStart)
+    const after = localTemplate.slice(selectionEnd)
+    const nextValue = `${before}${placeholder}${after}`
+
+    setLocalTemplate(nextValue)
+    startTransition(() => onTemplateChange(nextValue))
+
+    const caret = selectionStart + placeholder.length
+    requestAnimationFrame(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus()
+        textareaRef.current.setSelectionRange(caret, caret)
+      }
     })
   }
 
@@ -60,10 +80,11 @@ export function PromptEditor({ template, onTemplateChange, columns }: PromptEdit
       <p className="text-xs text-muted-foreground mb-4">Use {"{{ColumnName}}"} syntax to insert row values</p>
 
       <Textarea
+        ref={textareaRef}
         value={localTemplate}
         onChange={(e) => handleChange(e.target.value)}
         placeholder="Enter your prompt template..."
-        className="min-h-[200px] font-mono text-sm resize-none mb-4"
+        className="min-h-[200px] max-h-[500px] font-mono text-sm resize-none mb-4"
       />
 
       {columns.length > 0 && (

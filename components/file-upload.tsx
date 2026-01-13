@@ -4,6 +4,7 @@ import type React from "react"
 
 import { useCallback, useRef } from "react"
 import { Button } from "@/components/ui/button"
+import { toast } from "sonner"
 import { parseExcelFile } from "@/lib/excel-parser"
 import type { ExcelData } from "@/lib/types"
 
@@ -22,9 +23,10 @@ export function FileUpload({ onUpload }: FileUploadProps) {
       try {
         const data = await parseExcelFile(file)
         onUpload(data)
+        toast.success("File uploaded successfully")
       } catch (error) {
         console.error("Error parsing Excel file:", error)
-        alert("Failed to parse Excel file. Please ensure it's a valid .xlsx or .xls file.")
+        toast.error("Failed to parse Excel file. Please ensure it's a valid .xlsx or .xls file.")
       }
 
       // Reset input to allow re-uploading the same file

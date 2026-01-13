@@ -7,6 +7,7 @@ import { PromptEditor } from "./prompt-editor"
 import { FilterPanel } from "./filter-panel"
 import { StorageDialog } from "./storage-dialog"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ChevronLeft, ChevronRight, Filter, FileText } from "lucide-react"
 import type { ExcelData, FilterState } from "@/lib/types"
 
@@ -17,7 +18,7 @@ export function ExcelViewer() {
     "Generate a summary for {{Name}} with the following details:\n\nEmail: {{Email}}\nRole: {{Role}}\n\nPlease provide insights and recommendations.",
   )
   const [leftPanelOpen, setLeftPanelOpen] = useState(true)
-  const [rightPanelOpen, setRightPanelOpen] = useState(true)
+  const [promptEditorOpen, setPromptEditorOpen] = useState(false)
 
   const handleFileUpload = useCallback((excelData: ExcelData) => {
     setData(excelData)
@@ -65,6 +66,14 @@ export function ExcelViewer() {
                 </Button>
               }
             />
+            <Button
+              variant="outline"
+              size="icon"
+              title="Edit Prompt Template"
+              onClick={() => setPromptEditorOpen(true)}
+            >
+              <FileText className="h-4 w-4" />
+            </Button>
             <FileUpload onUpload={handleFileUpload} />
           </div>
         </div>
@@ -74,9 +83,8 @@ export function ExcelViewer() {
       <div className="flex flex-1 overflow-hidden">
         {data && (
           <aside
-            className={`relative border-r border-border bg-card transition-all duration-300 ease-in-out ${
-              leftPanelOpen ? "w-64" : "w-12"
-            }`}
+            className={`relative border-r border-border bg-card transition-all duration-300 ease-in-out ${leftPanelOpen ? "w-64" : "w-12"
+              }`}
           >
             {leftPanelOpen ? (
               <>
@@ -133,45 +141,18 @@ export function ExcelViewer() {
           )}
         </main>
 
-        <aside
-          className={`relative border-l border-border bg-card transition-all duration-300 ease-in-out ${
-            rightPanelOpen ? "w-80" : "w-12"
-          }`}
-        >
-          {rightPanelOpen ? (
-            <>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="absolute -left-3 top-4 z-10 h-6 w-6 rounded-full border border-border bg-card shadow-sm"
-                onClick={() => setRightPanelOpen(false)}
-              >
-                <ChevronRight className="h-3 w-3" />
-              </Button>
-              <div className="overflow-y-auto h-full">
-                <PromptEditor
-                  template={promptTemplate}
-                  onTemplateChange={setPromptTemplate}
-                  columns={data?.columns || []}
-                />
-              </div>
-            </>
-          ) : (
-            <div className="flex flex-col items-center pt-4 gap-2">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => setRightPanelOpen(true)}
-                title="Open Prompt Editor"
-              >
-                <FileText className="h-4 w-4" />
-              </Button>
-              <span className="text-xs text-muted-foreground [writing-mode:vertical-lr]">Prompt</span>
-            </div>
-          )}
-        </aside>
       </div>
+
+      <Dialog open={promptEditorOpen} onOpenChange={setPromptEditorOpen}>
+        <DialogContent className="!w-[98vw] sm:!w-[98vw] lg:!w-[94vw] !max-w-[1800px] sm:!max-w-[1800px] lg:!max-w-[2000px] max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle>Edit Prompt Template</DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[75vh] overflow-y-auto">
+            <PromptEditor template={promptTemplate} onTemplateChange={setPromptTemplate} columns={data?.columns || []} />
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
