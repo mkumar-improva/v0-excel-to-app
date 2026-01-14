@@ -1,13 +1,15 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useMemo } from "react"
 import { api } from "@/lib/api-client"
+import { AILoader } from "@/components/ai-loader"
 import { DataTable } from "./data-table"
 import { PromptEditor } from "./prompt-editor"
 import { FilterPanel } from "./filter-panel"
+import { ExportToExcelDialog } from "./export-to-excel-dialog"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { FileText, Loader2, ChevronLeft, Filter } from "lucide-react"
+import { FileText, Loader2, ChevronLeft, Filter, FileSpreadsheet } from "lucide-react"
 import { ExcelFileDB, FilterState, Project } from "@/lib/types"
 import { toast } from "sonner"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
@@ -39,6 +41,19 @@ export function ProjectViewer({
     const [leftPanelOpen, setLeftPanelOpen] = useState(true)
     const [savingTemplate, setSavingTemplate] = useState(false)
     const [activeTab, setActiveTab] = useState("in-queue")
+    const [exportDialogOpen, setExportDialogOpen] = useState(false)
+
+    const matchFields = useMemo(() => {
+        try {
+            const theme = typeof project.theme === 'string' ? JSON.parse(project.theme) : project.theme
+            if (theme?.matchFields && Array.isArray(theme.matchFields)) {
+                return theme.matchFields
+            }
+        } catch (e) {
+            console.error("Failed to parse match fields", e)
+        }
+        return []
+    }, [project.theme])
 
     // Update local state when project prop changes (e.g. initial load)
     useEffect(() => {
@@ -55,7 +70,7 @@ export function ProjectViewer({
     useEffect(() => {
         if (!fileId) return
         loadData()
-    }, [fileId, refreshTrigger])
+    }, [fileId, refreshTrigger, project.theme])
 
     const loadData = async () => {
         try {
@@ -69,10 +84,29 @@ export function ProjectViewer({
 
             const processedRows = entriesData.map(entry => ({
                 ...entry.data,
-                _entryId: entry.id, // Keep track of ID for responses
+                _entryId: entry.id,
                 _responseCount: entry.response_count || 0,
-                _approvedCount: entry.approved_count || 0
+                _approvedCount: entry.approved_count || 0,
+                _lastActivity: [entry.last_generated_at, entry.last_approved_at]
+                    .filter(Boolean)
+                    .sort()
+                    .pop() || ''
             }))
+
+
+
+            // Sort by most recent activity desc, then by original row order (stable sort implied or explicit)
+            processedRows.sort((a, b) => {
+                const timeA = a._lastActivity
+                const timeB = b._lastActivity
+
+                if (timeA && timeB) {
+                    return timeB.localeCompare(timeA)
+                }
+                if (timeA) return -1
+                if (timeB) return 1
+                return 0
+            })
 
             setRows(processedRows)
 
@@ -105,7 +139,7 @@ export function ProjectViewer({
     if (loading) {
         return (
             <div className="flex items-center justify-center h-full">
-                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                <AILoader message="Loading project data..." />
             </div>
         )
     }
@@ -136,7 +170,8 @@ export function ProjectViewer({
             case "in-queue":
                 return responseCount === 0
             case "generated":
-                return responseCount > 0
+                // Show only responses that are generated but NOT approved
+                return responseCount > 0 && approvedCount === 0
             case "approved":
                 return approvedCount > 0
             default:
@@ -151,7 +186,18 @@ export function ProjectViewer({
                     <h2 className="text-lg font-semibold truncate">{file.file_name}</h2>
                     <p className="text-xs text-muted-foreground">{filteredRows.length} of {rows.length} rows</p>
                 </div>
-                <div className="flex-shrink-0">
+                <div className="flex items-center gap-3 flex-shrink-0">
+                    {activeTab === "approved" && filteredRows.length > 0 && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setExportDialogOpen(true)}
+                            className="gap-2"
+                        >
+                            <FileSpreadsheet className="h-4 w-4" />
+                            Export to Excel
+                        </Button>
+                    )}
                     <Tabs value={activeTab} onValueChange={setActiveTab}>
                         <TabsList>
                             <TabsTrigger value="in-queue">In Queue</TabsTrigger>
@@ -202,6 +248,8 @@ export function ProjectViewer({
                         columns={file.columns}
                         rows={filteredRows}
                         promptTemplate={promptTemplate}
+                        onDataChange={loadData}
+                        matchFields={matchFields}
                     />
                 </main>
             </div>
@@ -228,6 +276,14 @@ export function ProjectViewer({
                     </div>
                 </DialogContent>
             </Dialog>
+
+            <ExportToExcelDialog
+                open={exportDialogOpen}
+                onOpenChange={setExportDialogOpen}
+                rows={filteredRows}
+                columns={file.columns}
+                fileName={`${file.file_name.replace(/\.[^/.]+$/, '')}_approved`}
+            />
         </div>
     )
 }

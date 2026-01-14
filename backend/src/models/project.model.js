@@ -33,6 +33,10 @@ class ProjectModel {
             updates.push('prompt_template = ?');
             values.push(data.prompt_template);
         }
+        if (data.theme !== undefined) {
+            updates.push('theme = ?');
+            values.push(typeof data.theme === 'object' ? JSON.stringify(data.theme) : data.theme);
+        }
 
         if (updates.length === 0) return this.findById(id);
 

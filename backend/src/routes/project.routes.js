@@ -14,7 +14,8 @@ const validateProject = [
 const validateProjectUpdate = [
     body('name').optional().notEmpty().trim().withMessage('Project name cannot be empty'),
     body('description').optional().trim(),
-    body('prompt_template').optional().trim()
+    body('prompt_template').optional().trim(),
+    body('theme').optional()
 ];
 
 const validateId = [
@@ -66,8 +67,8 @@ router.get('/:id', validateId, checkValidation, async (req, res, next) => {
 // PUT /api/projects/:id - Update a project
 router.put('/:id', validateId, validateProjectUpdate, checkValidation, async (req, res, next) => {
     try {
-        const { name, description, prompt_template } = req.body;
-        const project = await ProjectModel.update(req.params.id, { name, description, prompt_template });
+        const { name, description, prompt_template, theme } = req.body;
+        const project = await ProjectModel.update(req.params.id, { name, description, prompt_template, theme });
         if (!project) {
             return res.status(404).json({ error: 'Project not found' });
         }

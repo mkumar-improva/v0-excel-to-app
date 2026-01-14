@@ -3,19 +3,11 @@ import { streamText } from "ai"
 
 export const runtime = "nodejs"
 
-// Gemini pricing (as of current rates - adjust as needed)
-const PRICING = {
-    "gemini-3-pro-preview": {
-        inputPer1M: 1.25,  // $1.25 per 1M input tokens
-        outputPer1M: 5.00   // $5.00 per 1M output tokens
-    }
-}
+// Pricing: $2.00 per 200k tokens (= $10.00 per 1M tokens)
+const COST_PER_MILLION_TOKENS = 10.00
 
-function calculateCost(model: string, inputTokens: number, outputTokens: number): number {
-    const pricing = PRICING[model as keyof typeof PRICING] || PRICING["gemini-3-pro-preview"]
-    const inputCost = (inputTokens / 1_000_000) * pricing.inputPer1M
-    const outputCost = (outputTokens / 1_000_000) * pricing.outputPer1M
-    return inputCost + outputCost
+function calculateCost(totalTokens: number): number {
+    return (totalTokens / 1_000_000) * COST_PER_MILLION_TOKENS
 }
 
 export async function POST(req: Request) {
@@ -77,41 +69,95 @@ Please provide a comprehensive answer based on the search results above. Cite so
         const google = createGoogleGenerativeAI({ apiKey })
         const modelName = "gemini-3-pro-preview"
 
+        // Capture usage data in a variable
+        let capturedUsage: any = null
+
         const result = await streamText({
             model: google(modelName),
             prompt: enhancedPrompt,
             onFinish: async ({ usage }) => {
-                // Usage statistics are captured here
-                console.log("Token usage:", usage)
+                // Capture usage statistics
+                capturedUsage = usage
             }
         })
 
-        // We need to convert the stream and append usage data at the end
-        const stream = result.toTextStreamResponse()
+        // Create a custom stream that appends token usage at the end
+        const encoder = new TextEncoder()
+        const decoder = new TextDecoder()
 
-        // Clone the response and add usage data as a custom header
-        const usage = await result.usage
+        const customStream = new TransformStream({
+            async transform(chunk, controller) {
+                controller.enqueue(chunk)
+            },
+            async flush(controller) {
+                // Wait for usage data to be available
+                const usage = await result.usage
 
-        // Create a new response with custom headers for token usage
-        const headers = new Headers(stream.headers)
-        if (usage) {
-            // Using type assertion as AI SDK usage structure
-            const usageData = usage as any
-            const inputTokens = usageData.promptTokens ?? 0
-            const outputTokens = usageData.completionTokens ?? 0
-            const totalTokens = usageData.totalTokens ?? 0
+                if (usage) {
+                    // AI SDK uses different property names - cast to any to avoid type errors
+                    const usageData = usage as any
 
-            headers.set("X-Input-Tokens", String(inputTokens))
-            headers.set("X-Output-Tokens", String(outputTokens))
-            headers.set("X-Total-Tokens", String(totalTokens))
-            const cost = calculateCost(modelName, inputTokens, outputTokens)
-            headers.set("X-Estimated-Cost", String(cost))
-        }
+                    // Debug: Log all available properties
+                    console.log("🔍 Raw usage object:", JSON.stringify(usage, null, 2))
+                    console.log("🔍 Usage object keys:", Object.keys(usage))
 
-        return new Response(stream.body, {
-            status: stream.status,
-            statusText: stream.statusText,
-            headers
+                    // The AI SDK might use different property names depending on the version
+                    // Try multiple possible property names
+                    let inputTokens = usageData.promptTokens ?? usageData.inputTokens ?? 0
+                    let outputTokens = usageData.completionTokens ?? usageData.outputTokens ?? 0
+                    let totalTokens = usageData.totalTokens ?? 0
+
+                    // If we have totalTokens but not the breakdown, try to get it from the result
+                    if (totalTokens > 0 && inputTokens === 0 && outputTokens === 0) {
+                        // Try to get from the result object itself
+                        const resultUsage = (result as any).usage
+                        if (resultUsage) {
+                            console.log("🔍 Checking result.usage:", JSON.stringify(resultUsage, null, 2))
+                        }
+
+                        // Some AI SDKs provide it in the experimental_providerMetadata
+                        const providerMetadata = usageData.experimental_providerMetadata
+                        if (providerMetadata) {
+                            console.log("🔍 Provider metadata:", JSON.stringify(providerMetadata, null, 2))
+                            inputTokens = providerMetadata.promptTokens ?? inputTokens
+                            outputTokens = providerMetadata.completionTokens ?? outputTokens
+                        }
+                    }
+
+                    // Calculate totalTokens if not available
+                    if (totalTokens === 0 && (inputTokens > 0 || outputTokens > 0)) {
+                        totalTokens = inputTokens + outputTokens
+                    }
+
+                    const cost = calculateCost(totalTokens)
+
+                    console.log("📊 Final extracted token data:", { inputTokens, outputTokens, totalTokens, cost })
+
+                    // Append a special marker with token data at the end
+                    const tokenData = `\n\n__TOKEN_USAGE__:${JSON.stringify({
+                        inputTokens,
+                        outputTokens,
+                        totalTokens,
+                        estimatedCost: cost
+                    })}`
+
+                    controller.enqueue(encoder.encode(tokenData))
+                    console.log("✅ Token usage appended to stream")
+                } else {
+                    console.warn("⚠️  No usage data available!")
+                }
+            }
+        })
+
+        // Get the text stream and pipe through our custom transform
+        const textStream = result.textStream
+
+        return new Response(textStream.pipeThrough(customStream), {
+            headers: {
+                'Content-Type': 'text/plain; charset=utf-8',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+            }
         })
     } catch (error) {
         console.error("API Error:", error)

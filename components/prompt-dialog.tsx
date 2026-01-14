@@ -11,6 +11,7 @@ import remarkGfm from "remark-gfm"
 import { api } from "@/lib/api-client"
 import { ResponseViewer } from "@/components/response-viewer"
 import { AIResponse } from "@/lib/types"
+import { AILoader, AILoaderCompact } from "@/components/ai-loader"
 
 interface PromptDialogProps {
   open: boolean
@@ -18,9 +19,10 @@ interface PromptDialogProps {
   prompt: string
   rowData: Record<string, unknown> | null
   initialTab?: "prompt" | "response"
+  matchFields?: string[]
 }
 
-export function PromptDialog({ open, onOpenChange, prompt, rowData, initialTab = "prompt" }: PromptDialogProps) {
+export function PromptDialog({ open, onOpenChange, prompt, rowData, initialTab = "prompt", matchFields }: PromptDialogProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [aiResponse, setAiResponse] = useState<string>("")
   const [activeTab, setActiveTab] = useState<string>("prompt")
@@ -47,7 +49,39 @@ export function PromptDialog({ open, onOpenChange, prompt, rowData, initialTab =
 
   const parsedData = getParsedResponse()
 
+  // Calculate match percentage dynamically
+  const matchPercentage = matchFields && parsedData && rowData ? (() => {
+    try {
+      const validated = parsedData.validated_data || parsedData
+      let matchCount = 0
+      let validFieldsToCheck = 0
+
+      matchFields.forEach(field => {
+        const rowKey = Object.keys(rowData).find(k => k.toLowerCase() === field.toLowerCase())
+        const valKey = Object.keys(validated).find(k => k.toLowerCase() === field.toLowerCase())
+
+        if (rowKey && valKey) {
+          validFieldsToCheck++
+          const originalVal = String((rowData as any)[rowKey] || "").trim().toLowerCase()
+          const newVal = String(validated[valKey] || "").trim().toLowerCase()
+
+          if (originalVal === newVal && originalVal !== "") {
+            matchCount++
+          }
+        }
+      })
+
+      return validFieldsToCheck > 0
+        ? Math.round((matchCount / validFieldsToCheck) * 100)
+        : undefined
+    } catch (e) {
+      console.error("Error calculating match percentage", e)
+      return undefined
+    }
+  })() : undefined
+
   useEffect(() => {
+    // ... no changes needed for this specific effect logic ...
     if (open) {
       setAiResponse("")
       setLatestResponse(null)
@@ -151,28 +185,6 @@ export function PromptDialog({ open, onOpenChange, prompt, rowData, initialTab =
         throw new Error("Failed to generate response")
       }
 
-      // Extract token usage from headers
-      const inputTokens = parseInt(response.headers.get("X-Input-Tokens") || "0", 10)
-      const outputTokens = parseInt(response.headers.get("X-Output-Tokens") || "0", 10)
-      const totalTokens = parseInt(response.headers.get("X-Total-Tokens") || "0", 10)
-      const estimatedCost = parseFloat(response.headers.get("X-Estimated-Cost") || "0")
-
-      // Debug: Log extracted values
-      console.log('🔍 Frontend: Extracted token usage from headers:')
-      console.log('   X-Input-Tokens header:', response.headers.get("X-Input-Tokens"))
-      console.log('   X-Output-Tokens header:', response.headers.get("X-Output-Tokens"))
-      console.log('   X-Total-Tokens header:', response.headers.get("X-Total-Tokens"))
-      console.log('   X-Estimated-Cost header:', response.headers.get("X-Estimated-Cost"))
-      console.log('   Parsed values:', { inputTokens, outputTokens, totalTokens, estimatedCost })
-
-      if (inputTokens > 0 || outputTokens > 0) {
-        tokenUsage = { inputTokens, outputTokens, totalTokens, estimatedCost }
-        setTokenUsage(tokenUsage)
-        console.log('✅ Frontend: Token usage object created:', tokenUsage)
-      } else {
-        console.warn('⚠️  Frontend: No token usage detected (all zeros)')
-      }
-
       const reader = response.body?.getReader()
       const decoder = new TextDecoder()
 
@@ -184,6 +196,31 @@ export function PromptDialog({ open, onOpenChange, prompt, rowData, initialTab =
           fullResponse += chunk
           setAiResponse((prev) => prev + chunk)
         }
+      }
+
+      // Extract token usage from the response if present
+      const tokenMarker = "__TOKEN_USAGE__:"
+      if (fullResponse.includes(tokenMarker)) {
+        const parts = fullResponse.split(tokenMarker)
+        const actualResponse = parts[0].trim()
+        const tokenDataStr = parts[1]?.trim()
+
+        if (tokenDataStr) {
+          try {
+            const extractedTokenUsage = JSON.parse(tokenDataStr)
+            tokenUsage = extractedTokenUsage
+            setTokenUsage(tokenUsage)
+            console.log('✅ Frontend: Token usage extracted from stream:', tokenUsage)
+          } catch (e) {
+            console.error('Failed to parse token usage:', e)
+          }
+        }
+
+        // Update the response to remove the token marker
+        fullResponse = actualResponse
+        setAiResponse(actualResponse)
+      } else {
+        console.warn('⚠️  Frontend: No token usage marker found in response')
       }
 
       // Save to backend after complete
@@ -198,19 +235,57 @@ export function PromptDialog({ open, onOpenChange, prompt, rowData, initialTab =
     }
   }
 
-  const handleApprove = async () => {
+  const handleApprove = async (editedData?: any) => {
     if (!latestResponse) return
     try {
       setIsLoading(true)
-      const updated = await api.entries.updateResponse(latestResponse.id, {
+
+      // Prepare update payload
+      const updatePayload: any = {
         status: 'approved',
         approved_at: new Date().toISOString()
-      })
+      }
+
+      // If data was edited, update the response field with the new JSON
+      if (editedData) {
+        updatePayload.response = JSON.stringify(editedData, null, 2)
+        console.log('💾 Saving edited data:', editedData)
+      }
+
+      const updated = await api.entries.updateResponse(latestResponse.id, updatePayload)
       setLatestResponse(updated)
-      toast.success("Response approved")
+
+      // Update the displayed response if data was edited
+      if (editedData) {
+        setAiResponse(updatePayload.response)
+      }
+
+      toast.success(editedData ? "Response approved with edits saved" : "Response approved")
     } catch (err) {
       console.error(err)
       toast.error("Failed to approve response")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleReject = async () => {
+    if (!latestResponse) return
+    try {
+      setIsLoading(true)
+
+      const updatePayload: any = {
+        status: 'rejected',
+        approved_at: null // Clear approval timestamp if it was previously approved
+      }
+
+      const updated = await api.entries.updateResponse(latestResponse.id, updatePayload)
+      setLatestResponse(updated)
+
+      toast.success("Response marked as rejected")
+    } catch (err) {
+      console.error(err)
+      toast.error("Failed to reject response")
     } finally {
       setIsLoading(false)
     }
@@ -261,7 +336,7 @@ export function PromptDialog({ open, onOpenChange, prompt, rowData, initialTab =
 
           <TabsContent value="prompt" className="flex-1 mt-4 px-6 pb-6 overflow-hidden flex flex-col">
             <ScrollArea className="flex-1 w-full rounded-md border border-border p-4 bg-muted/30 overflow-y-scroll">
-              <pre className="text-sm whitespace-pre-wrap font-mono">{prompt}</pre>
+              <pre className="text-sm whitespace-pre-wrap">{prompt}</pre>
             </ScrollArea>
 
             <div className="flex flex-row gap-32 justify-between mt-4">
@@ -275,10 +350,7 @@ export function PromptDialog({ open, onOpenChange, prompt, rowData, initialTab =
                 className="flex-1 bg-primary text-primary-foreground"
               >
                 {isLoading ? (
-                  <>
-                    <span className="animate-spin mr-2">⟳</span>
-                    Generating...
-                  </>
+                  <AILoaderCompact />
                 ) : (
                   <>Send to AI</>
                 )}
@@ -294,9 +366,11 @@ export function PromptDialog({ open, onOpenChange, prompt, rowData, initialTab =
                     data={parsedData}
                     rawJson={aiResponse}
                     onApprove={handleApprove}
+                    onReject={handleReject}
                     onReiterate={handleReiterate}
                     status={latestResponse?.status}
                     tokenUsage={tokenUsage}
+                    matchPercentage={matchPercentage}
                   />
                 </div>
               ) : (
@@ -334,10 +408,8 @@ export function PromptDialog({ open, onOpenChange, prompt, rowData, initialTab =
                 </div>
               )
             ) : isLoading ? (
-              <div className="flex-1 p-6 space-y-3 animate-pulse">
-                <div className="h-4 w-3/4 rounded bg-muted" />
-                <div className="h-4 w-5/6 rounded bg-muted" />
-                <div className="h-4 w-2/3 rounded bg-muted" />
+              <div className="flex-1 flex items-center justify-center">
+                <AILoader />
               </div>
             ) : (
               <div className="flex-1 flex items-center justify-center text-muted-foreground">

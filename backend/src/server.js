@@ -10,6 +10,7 @@ const fileRoutes = require('./routes/file.routes');
 const entryRoutes = require('./routes/entry.routes');
 const responseRoutes = require('./routes/response.routes');
 const searchRoutes = require('./routes/search.routes');
+const analyticsRoutes = require('./routes/analytics.routes');
 
 
 // Initialize database
@@ -38,6 +39,7 @@ app.use('/api', fileRoutes);
 app.use('/api/entries', entryRoutes);
 app.use('/api', responseRoutes);
 app.use('/api', searchRoutes);
+app.use('/api', analyticsRoutes);
 
 
 // Error handling

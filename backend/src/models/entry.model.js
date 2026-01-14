@@ -50,7 +50,10 @@ class EntryModel {
         const rows = await all(
             `SELECT e.*, 
                     COUNT(r.id) as response_count,
-                    SUM(CASE WHEN r.status = 'approved' THEN 1 ELSE 0 END) as approved_count
+                    SUM(CASE WHEN r.status = 'approved' THEN 1 ELSE 0 END) as approved_count,
+                    MAX(r.created_at) as last_generated_at,
+                    MAX(r.approved_at) as last_approved_at,
+                    (SELECT response FROM ai_responses WHERE entry_id = e.id ORDER BY created_at DESC LIMIT 1) as latest_response_text
              FROM entries e 
              LEFT JOIN ai_responses r ON e.id = r.entry_id 
              WHERE e.excel_file_id = ? 
@@ -62,7 +65,8 @@ class EntryModel {
             ...row,
             data: JSON.parse(row.data),
             response_count: row.response_count,
-            approved_count: row.approved_count || 0
+            approved_count: row.approved_count || 0,
+            latest_response_text: row.latest_response_text
         }));
     }
 

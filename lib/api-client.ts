@@ -66,6 +66,14 @@ export const api = {
 
             return res.json() as Promise<{ file: ExcelFileDB; entriesCreated: number }>
         },
+        getAnalytics: async (id: number, range: '7d' | '30d' | 'all' = '7d') => {
+            const res = await fetchAPI<{ analytics: any }>(`/projects/${id}/analytics?range=${range}`)
+            return res.analytics
+        },
+        getAnalyticsSummary: async (id: number) => {
+            const res = await fetchAPI<{ summary: any }>(`/projects/${id}/analytics/summary`)
+            return res.summary
+        },
     },
     files: {
         get: async (id: number) => {

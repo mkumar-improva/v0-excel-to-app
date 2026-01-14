@@ -36,6 +36,7 @@ export interface Project {
   name: string
   description?: string
   prompt_template?: string
+  theme?: string | Record<string, any>
   created_at: string
   updated_at: string
 }
@@ -57,6 +58,9 @@ export interface Entry {
   created_at: string
   response_count?: number
   approved_count?: number
+  last_generated_at?: string
+  last_approved_at?: string
+  latest_response_text?: string
 }
 
 export interface AIResponse {

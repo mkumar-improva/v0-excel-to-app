@@ -89,6 +89,11 @@ function initializeTables() {
         db.run('ALTER TABLE projects ADD COLUMN prompt_template TEXT', (err) => {
           // Ignore error if column already exists
         });
+
+        // Add theme column migration
+        db.run('ALTER TABLE projects ADD COLUMN theme TEXT', (err) => {
+          // Ignore error if column already exists
+        });
       }
     });
 
@@ -160,7 +165,12 @@ function initializeTables() {
     db.run('CREATE INDEX IF NOT EXISTS idx_entries_excel_file_id ON entries(excel_file_id)');
     db.run('CREATE INDEX IF NOT EXISTS idx_ai_responses_entry_id ON ai_responses(entry_id)');
 
-    console.log('✅ Database tables initialized');
+    // Analytics performance indexes
+    db.run('CREATE INDEX IF NOT EXISTS idx_ai_responses_status ON ai_responses(status)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_ai_responses_created_at ON ai_responses(created_at)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_ai_responses_status_created ON ai_responses(status, created_at)');
+
+    console.log('✅ Database tables and indexes initialized');
   });
 }
 

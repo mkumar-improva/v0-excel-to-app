@@ -10,12 +10,13 @@ import { isSimilarValue } from "@/lib/data-comparison"
 import { ApprovalWorkspace } from "./approval-workspace"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { ThumbsUp, RefreshCw } from "lucide-react"
+import { ThumbsUp, RefreshCw, XCircle } from "lucide-react"
 
 interface ResponseViewerProps {
     data: ResponseData
     rawJson: string
-    onApprove?: () => void
+    onApprove?: (editedData?: any) => void
+    onReject?: () => void
     onReiterate?: () => void
     status?: 'pending' | 'approved' | 'rejected'
     tokenUsage?: {
@@ -24,9 +25,10 @@ interface ResponseViewerProps {
         totalTokens: number
         estimatedCost: number
     }
+    matchPercentage?: number
 }
 
-export function ResponseViewer({ data, rawJson, onApprove, onReiterate, status = 'pending', tokenUsage }: ResponseViewerProps) {
+export function ResponseViewer({ data, rawJson, onApprove, onReject, onReiterate, status = 'pending', tokenUsage, matchPercentage }: ResponseViewerProps) {
     const [showApprovalWorkspace, setShowApprovalWorkspace] = useState(false)
 
     // If data doesn't look structured enough (missing key fields), fallback to raw JSON
@@ -39,12 +41,17 @@ export function ResponseViewer({ data, rawJson, onApprove, onReiterate, status =
             <ApprovalWorkspace
                 data={data}
                 onClose={() => setShowApprovalWorkspace(false)}
-                onApprove={() => {
-                    onApprove?.()
+                onApprove={(editedData) => {
+                    // Forward the edited data to the parent's onApprove
+                    onApprove?.(editedData)
                     setShowApprovalWorkspace(false)
                 }}
                 onReiterate={() => {
                     onReiterate?.()
+                    setShowApprovalWorkspace(false)
+                }}
+                onReject={() => {
+                    onReject?.()
                     setShowApprovalWorkspace(false)
                 }}
                 isApproved={status === 'approved'}
@@ -83,6 +90,12 @@ export function ResponseViewer({ data, rawJson, onApprove, onReiterate, status =
         return { key, original, validated, hasChanged }
     })
 
+    const COST_PER_MILLION_TOKENS = 2.00
+
+    function calculateCost(totalTokens: number): number {
+        return (totalTokens / 1_000_000) * COST_PER_MILLION_TOKENS
+    }
+
     return (
         <div className="flex flex-col h-full overflow-hidden">
             {/* Header Section */}
@@ -114,21 +127,32 @@ export function ResponseViewer({ data, rawJson, onApprove, onReiterate, status =
                         </span>
                     </div>
 
+                    {typeof matchPercentage === 'number' && (
+                        <div className="flex items-center gap-2 border-l pl-6">
+                            <span className="text-muted-foreground">Data Match:</span>
+                            <span className={cn(
+                                "font-bold",
+                                matchPercentage === 100 ? "text-green-600 dark:text-green-400" :
+                                    matchPercentage >= 80 ? "text-yellow-600 dark:text-yellow-400" :
+                                        "text-red-600 dark:text-red-400"
+                            )}>
+                                {matchPercentage}%
+                            </span>
+                        </div>
+                    )}
+
                     {tokenUsage && (
-                        <div className="flex items-center gap-4 border-l pl-6">
+                        <div className="flex items-center gap-8 border-l pl-6">
                             <div className="flex flex-col">
                                 <span className="text-xs text-muted-foreground">Tokens</span>
-                                <span className="font-mono text-xs font-medium">
+                                <span className="text-xs text-center font-medium">
                                     {tokenUsage.totalTokens.toLocaleString()}
-                                    <span className="text-muted-foreground ml-1">
-                                        ({tokenUsage.inputTokens.toLocaleString()} in / {tokenUsage.outputTokens.toLocaleString()} out)
-                                    </span>
                                 </span>
                             </div>
                             <div className="flex flex-col">
-                                <span className="text-xs text-muted-foreground">Cost</span>
-                                <span className="font-mono text-xs font-bold text-primary">
-                                    ${tokenUsage.estimatedCost.toFixed(6)}
+                                <span className="text-xs text-muted-foreground text-center">Cost</span>
+                                <span className="text-xs font-medium text-primary">
+                                    ${calculateCost(tokenUsage.totalTokens).toFixed(3)}
                                 </span>
                             </div>
                         </div>
@@ -240,6 +264,15 @@ export function ResponseViewer({ data, rawJson, onApprove, onReiterate, status =
                             <Monitor className="mr-2 h-4 w-4" />
                             Verify with Sources
                         </Button>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => onReject?.()}
+                            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        >
+                            <XCircle className="mr-2 h-4 w-4" />
+                            Reject
+                        </Button>
                         <div className="flex items-center text-success font-medium px-4 py-2 bg-success/10 rounded-md border border-success/20">
                             <CheckCircle2 className="mr-2 h-5 w-5" />
                             Approved
@@ -257,7 +290,7 @@ export function ResponseViewer({ data, rawJson, onApprove, onReiterate, status =
                         </Button>
                         <Button
                             variant="outline"
-                            onClick={onReiterate}
+                            onClick={() => onReiterate?.()}
                             className="text-warning border-warning/30 hover:bg-warning/10 hover:text-warning hover:border-warning transition-all"
                         >
                             <RefreshCw className="mr-2 h-4 w-4" />
@@ -265,7 +298,7 @@ export function ResponseViewer({ data, rawJson, onApprove, onReiterate, status =
                         </Button>
 
                         <Button
-                            onClick={onApprove}
+                            onClick={() => onApprove?.()}
                             className="bg-success hover:bg-success/90 text-success-foreground shadow-sm hover:shadow transition-all"
                         >
                             <ThumbsUp className="mr-2 h-4 w-4" />

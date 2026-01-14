@@ -84,7 +84,7 @@ export function PromptEditor({ template, onTemplateChange, columns }: PromptEdit
         value={localTemplate}
         onChange={(e) => handleChange(e.target.value)}
         placeholder="Enter your prompt template..."
-        className="min-h-[200px] max-h-[500px] font-mono text-sm resize-none mb-4"
+        className="min-h-[200px] max-h-[500px] text-sm resize-none mb-4"
       />
 
       {columns.length > 0 && (

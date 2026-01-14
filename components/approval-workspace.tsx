@@ -13,25 +13,33 @@ import {
     Monitor,
     CheckCircle2,
     ArrowRight,
-    AlertTriangle
+    AlertTriangle,
+    XCircle
 } from "lucide-react"
 import { ResponseData } from "@/lib/types"
 import { isSimilarValue } from "@/lib/data-comparison"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
+import { AILoader } from "@/components/ai-loader"
 
 interface ApprovalWorkspaceProps {
     data: ResponseData
     onClose: () => void
-    onApprove?: () => void
+    onApprove?: (editedData?: ResponseData) => void
     onReiterate?: () => void
+    onReject?: () => void
     isApproved: boolean
 }
 
-export function ApprovalWorkspace({ data, onClose, onApprove, onReiterate, isApproved }: ApprovalWorkspaceProps) {
+export function ApprovalWorkspace({ data, onClose, onApprove, onReiterate, onReject, isApproved }: ApprovalWorkspaceProps) {
     const [currentRefIndex, setCurrentRefIndex] = useState(0)
     const [iframeError, setIframeError] = useState(false)
     const [isLoading, setIsLoading] = useState(true)
+
+    // State for editable validated data
+    const [editedValidatedData, setEditedValidatedData] = useState<Record<string, any>>(
+        data.validated_data || {}
+    )
 
     const references = data.source_references || []
     const hasReferences = references.length > 0
@@ -55,14 +63,30 @@ export function ApprovalWorkspace({ data, onClose, onApprove, onReiterate, isApp
         }
     }
 
+    const handleFieldEdit = (key: string, value: string) => {
+        setEditedValidatedData(prev => ({
+            ...prev,
+            [key]: value
+        }))
+    }
+
+    const handleApprove = () => {
+        // Create updated data object with edited values
+        const updatedData: ResponseData = {
+            ...data,
+            validated_data: editedValidatedData
+        }
+        onApprove?.(updatedData)
+    }
+
     const allKeys = new Set([
         ...Object.keys(data.original_input || {}),
-        ...Object.keys(data.validated_data || {})
+        ...Object.keys(editedValidatedData || {})
     ])
 
     const comparisonRows = Array.from(allKeys).map(key => {
         const original = data.original_input?.[key]
-        const validated = data.validated_data?.[key]
+        const validated = editedValidatedData?.[key]
         // Use fuzzy comparison exported from ResponseViewer
         const hasChanged = !isSimilarValue(original, validated, key)
 
@@ -91,7 +115,7 @@ export function ApprovalWorkspace({ data, onClose, onApprove, onReiterate, isApp
                             <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={onReiterate}
+                                onClick={() => onReiterate?.()}
                                 className="gap-2 text-orange-600 border-orange-200 hover:bg-orange-50 hover:text-orange-700 dark:border-orange-900/50 dark:text-orange-400"
                             >
                                 <RefreshCw className="h-4 w-4" />
@@ -99,7 +123,7 @@ export function ApprovalWorkspace({ data, onClose, onApprove, onReiterate, isApp
                             </Button>
                             <Button
                                 size="sm"
-                                onClick={onApprove}
+                                onClick={handleApprove}
                                 className="gap-2 bg-success hover:bg-success/90 text-success-foreground"
                             >
                                 <ThumbsUp className="h-4 w-4" />
@@ -109,9 +133,20 @@ export function ApprovalWorkspace({ data, onClose, onApprove, onReiterate, isApp
                     )
                         :
                         (
-                            <div className="flex items-center text-success px-4 py-1 bg-success/10 rounded-md border border-success/20">
-                                <CheckCircle2 className="mr-2 h-5 w-5" strokeWidth={1.7} />
-                                Approved
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => onReject?.()}
+                                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                >
+                                    <XCircle className="h-4 w-4 mr-2" />
+                                    Reject
+                                </Button>
+                                <div className="flex items-center text-success px-4 py-1 bg-success/10 rounded-md border border-success/20">
+                                    <CheckCircle2 className="mr-2 h-5 w-5" strokeWidth={1.7} />
+                                    Approved
+                                </div>
                             </div>
                         )
                 }
@@ -153,13 +188,26 @@ export function ApprovalWorkspace({ data, onClose, onApprove, onReiterate, isApp
                                             <div className={cn(
                                                 "text-[10px] mb-1 uppercase font-semibold",
                                                 hasChanged ? "text-warning" : "text-success"
-                                            )}>Validated</div>
-                                            <div className={cn(
-                                                "font-medium",
-                                                hasChanged ? "text-warning-foreground" : ""
-                                            )}>
-                                                {validated || <span className="opacity-50 italic">Empty</span>}
-                                            </div>
+                                            )}>Validated {!isApproved && <span className="text-muted-foreground font-normal">(Editable)</span>}</div>
+                                            {isApproved ? (
+                                                <div className={cn(
+                                                    "font-medium",
+                                                    hasChanged ? "text-warning-foreground" : ""
+                                                )}>
+                                                    {validated || <span className="opacity-50 italic">Empty</span>}
+                                                </div>
+                                            ) : (
+                                                <input
+                                                    type="text"
+                                                    value={validated || ""}
+                                                    onChange={(e) => handleFieldEdit(key, e.target.value)}
+                                                    className={cn(
+                                                        "w-full px-2 py-1.5 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-primary/50",
+                                                        hasChanged ? "border-warning/50 bg-warning/5" : "border-success/50 bg-success/5"
+                                                    )}
+                                                    placeholder="Enter value..."
+                                                />
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -246,10 +294,7 @@ export function ApprovalWorkspace({ data, onClose, onApprove, onReiterate, isApp
                             <div className="flex-1 relative bg-white">
                                 {isLoading && !iframeError && (
                                     <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10">
-                                        <div className="flex flex-col items-center gap-2">
-                                            <RefreshCw className="h-8 w-8 animate-spin text-primary" />
-                                            <p className="text-sm text-muted-foreground">Loading preview...</p>
-                                        </div>
+                                        <AILoader message="Loading preview..." />
                                     </div>
                                 )}
                                 {!iframeError && currentRef ? (
