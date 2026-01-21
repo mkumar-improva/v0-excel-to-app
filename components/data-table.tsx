@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { PromptDialog } from "./prompt-dialog"
 import { ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react"
+import { Checkbox } from "@/components/ui/checkbox"
 
 interface DataTableProps {
   columns: string[]
@@ -13,6 +14,9 @@ interface DataTableProps {
   promptTemplate: string
   onDataChange?: () => void
   matchFields?: string[]
+  showMultiSelect?: boolean
+  selectedRows?: Set<number>
+  onSelectionChange?: (selected: Set<number>) => void
 }
 
 type SortConfig = {
@@ -20,7 +24,7 @@ type SortConfig = {
   direction: 'asc' | 'desc'
 }
 
-export function DataTable({ columns, rows, promptTemplate, onDataChange, matchFields }: DataTableProps) {
+export function DataTable({ columns, rows, promptTemplate, onDataChange, matchFields, showMultiSelect = false, selectedRows = new Set(), onSelectionChange }: DataTableProps) {
   const [selectedRow, setSelectedRow] = useState<Record<string, unknown> | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [initialDialogTab, setInitialDialogTab] = useState<"prompt" | "response">("prompt")
@@ -40,6 +44,27 @@ export function DataTable({ columns, rows, promptTemplate, onDataChange, matchFi
       prompt = prompt.replace(regex, String(row[col] ?? ""))
     })
     return prompt
+  }
+
+  const handleToggleRow = (entryId: number) => {
+    if (!onSelectionChange) return
+    const newSelected = new Set(selectedRows)
+    if (newSelected.has(entryId)) {
+      newSelected.delete(entryId)
+    } else {
+      newSelected.add(entryId)
+    }
+    onSelectionChange(newSelected)
+  }
+
+  const handleToggleAll = () => {
+    if (!onSelectionChange) return
+    if (selectedRows.size === sortedRows.length) {
+      onSelectionChange(new Set())
+    } else {
+      const allIds = new Set(sortedRows.map(row => row._entryId as number))
+      onSelectionChange(allIds)
+    }
   }
 
   const handleSort = (column: string, isShiftClick: boolean) => {
@@ -134,6 +159,7 @@ export function DataTable({ columns, rows, promptTemplate, onDataChange, matchFi
   }
 
   const sortedRows = getSortedRows()
+  const isAllSelected = sortedRows.length > 0 && selectedRows.size === sortedRows.length
 
   return (
     <>
@@ -143,6 +169,11 @@ export function DataTable({ columns, rows, promptTemplate, onDataChange, matchFi
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
               Showing <span className="font-medium text-foreground">{sortedRows.length}</span> rows
+              {showMultiSelect && selectedRows.size > 0 && (
+                <span className="ml-2 text-primary">
+                  ({selectedRows.size} selected)
+                </span>
+              )}
             </p>
             {sortConfigs.length > 0 && (
               <div className="flex items-center gap-2">
@@ -168,7 +199,16 @@ export function DataTable({ columns, rows, promptTemplate, onDataChange, matchFi
               <Table className="min-w-max">
                 <TableHeader className="sticky top-0 z-20 bg-background">
                   <TableRow className="bg-muted/50 hover:bg-muted/50">
-                    <TableHead className="w-[100px] sticky left-0 bg-muted/50 z-30 border-r">Actions</TableHead>
+                    {showMultiSelect && (
+                      <TableHead className="w-[50px] sticky left-0 bg-muted/50 z-30 border-r">
+                        <Checkbox
+                          checked={isAllSelected}
+                          onCheckedChange={handleToggleAll}
+                          aria-label="Select all"
+                        />
+                      </TableHead>
+                    )}
+                    <TableHead className={`w-[100px] ${showMultiSelect ? '' : 'sticky left-0 z-30'} bg-muted/50 border-r`}>Actions</TableHead>
                     {columns.map((column) => (
                       <TableHead
                         key={column}
@@ -187,13 +227,30 @@ export function DataTable({ columns, rows, promptTemplate, onDataChange, matchFi
                 <TableBody>
                   {sortedRows.map((row, index) => {
                     const hasResponse = (row._responseCount as number) > 0
+                    const entryId = row._entryId as number
+                    const isSelected = selectedRows.has(entryId)
+
                     return (
                       <TableRow
                         key={index}
-                        className={`group hover:bg-muted/50 cursor-pointer transition-colors`}
-                        onClick={() => handleGeneratePrompt(row)}
+                        className={`group hover:bg-muted/50 transition-colors ${isSelected ? 'bg-primary/5' : ''}`}
                       >
-                        <TableCell className="w-[100px] sticky left-0 bg-card z-10 transition-colors group-hover:bg-muted/50">
+                        {showMultiSelect && (
+                          <TableCell
+                            className="w-[50px] sticky left-0 bg-card z-10 transition-colors group-hover:bg-muted/50"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Checkbox
+                              checked={isSelected}
+                              onCheckedChange={() => handleToggleRow(entryId)}
+                              aria-label={`Select row ${index + 1}`}
+                            />
+                          </TableCell>
+                        )}
+                        <TableCell
+                          className={`w-[100px] ${showMultiSelect ? '' : 'sticky left-0 z-10'} bg-card transition-colors group-hover:bg-muted/50`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <Button
                             size="sm"
                             variant={hasResponse ? "secondary" : "outline"}

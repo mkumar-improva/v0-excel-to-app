@@ -314,6 +314,58 @@ export function ProjectDashboard({ projectId, projectName }: ProjectDashboardPro
                         </ResponsiveContainer>
                     </CardContent>
                 </Card>
+
+                {/* Recent Activity */}
+                <Card className="col-span-2">
+                    <CardHeader>
+                        <CardTitle>Recent Activity</CardTitle>
+                        <CardDescription>Latest AI generation requests and their token usage</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <ScrollArea className="h-[400px]">
+                            <div className="space-y-3">
+                                {analytics.timeSeriesData.slice(0, 10).map((item, idx) => (
+                                    <div
+                                        key={idx}
+                                        className="flex items-start gap-4 p-4 border rounded-lg hover:bg-muted/50 transition-colors"
+                                    >
+                                        <div className="flex-shrink-0 mt-1">
+                                            <Activity className="h-5 w-5 text-primary" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="flex-1">
+                                                    <p className="text-sm font-medium">
+                                                        {item.responses} response{item.responses !== 1 ? 's' : ''} generated
+                                                    </p>
+                                                    <p className="text-xs text-muted-foreground mt-1">
+                                                        {format(parseISO(item.date), 'MMM dd, yyyy')}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                                                <span className="flex items-center gap-1">
+                                                    <Zap className="h-3 w-3" />
+                                                    {(item.tokens / 1000).toFixed(1)}K tokens
+                                                </span>
+                                                <span className="flex items-center gap-1">
+                                                    <DollarSign className="h-3 w-3" />
+                                                    ${item.cost.toFixed(4)}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                                {analytics.timeSeriesData.length === 0 && (
+                                    <div className="text-center py-12 text-muted-foreground">
+                                        <Activity className="h-12 w-12 mx-auto mb-4 opacity-20" />
+                                        <p>No recent activity</p>
+                                    </div>
+                                )}
+                            </div>
+                        </ScrollArea>
+                    </CardContent>
+                </Card>
             </div>
         </div>
     )

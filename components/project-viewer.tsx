@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect, useMemo } from "react"
+import { useState, useCallback, useEffect, useMemo, useRef } from "react"
 import { api } from "@/lib/api-client"
 import { AILoader } from "@/components/ai-loader"
 import { DataTable } from "./data-table"
@@ -9,7 +9,7 @@ import { FilterPanel } from "./filter-panel"
 import { ExportToExcelDialog } from "./export-to-excel-dialog"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { FileText, Loader2, ChevronLeft, Filter, FileSpreadsheet } from "lucide-react"
+import { FileText, Loader2, ChevronLeft, Filter, FileSpreadsheet, Play } from "lucide-react"
 import { ExcelFileDB, FilterState, Project } from "@/lib/types"
 import { toast } from "sonner"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
@@ -42,6 +42,10 @@ export function ProjectViewer({
     const [savingTemplate, setSavingTemplate] = useState(false)
     const [activeTab, setActiveTab] = useState("in-queue")
     const [exportDialogOpen, setExportDialogOpen] = useState(false)
+    const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set())
+    const [isBatchProcessing, setIsBatchProcessing] = useState(false)
+    const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 })
+
 
     const matchFields = useMemo(() => {
         try {
@@ -136,6 +140,111 @@ export function ProjectViewer({
         }
     }
 
+    const stopBatchRef = useRef(false)
+
+    const handleStopBatch = () => {
+        stopBatchRef.current = true
+    }
+
+    const handleBatchProcess = async () => {
+        if (selectedRows.size === 0) {
+            toast.error("No rows selected")
+            return
+        }
+
+        setIsBatchProcessing(true)
+        stopBatchRef.current = false
+        setBatchProgress({ current: 0, total: selectedRows.size })
+
+        const selectedEntries = rows.filter(row => selectedRows.has(row._entryId as number))
+        let successCount = 0
+        let failCount = 0
+        let stopped = false
+
+        for (let i = 0; i < selectedEntries.length; i++) {
+            if (stopBatchRef.current) {
+                stopped = true
+                break
+            }
+
+            const row = selectedEntries[i]
+            setBatchProgress({ current: i + 1, total: selectedRows.size })
+
+            try {
+                // Generate prompt from template
+                let prompt = promptTemplate
+                file?.columns.forEach((col) => {
+                    const regex = new RegExp(`{{${col}}}`, "g")
+                    prompt = prompt.replace(regex, String(row[col] ?? ""))
+                })
+
+                // Call AI generation API
+                const response = await fetch("/api/generate", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ prompt, useSearch: true })
+                })
+
+                if (!response.ok) throw new Error("Generation failed")
+
+                const reader = response.body?.getReader()
+                const decoder = new TextDecoder()
+                let fullText = ""
+                let tokenUsage: any = null
+
+                if (reader) {
+                    while (true) {
+                        const { done, value } = await reader.read()
+                        if (done) break
+                        const chunk = decoder.decode(value)
+                        fullText += chunk
+
+                        // Check for token usage marker
+                        const tokenMarkerIndex = fullText.indexOf("__TOKEN_USAGE__:")
+                        if (tokenMarkerIndex !== -1) {
+                            const tokenDataStr = fullText.substring(tokenMarkerIndex + 16)
+                            try {
+                                tokenUsage = JSON.parse(tokenDataStr.trim())
+                                fullText = fullText.substring(0, tokenMarkerIndex).trim()
+                            } catch (e) {
+                                console.error("Failed to parse token usage", e)
+                            }
+                        }
+                    }
+                }
+
+                // Save response
+                await api.entries.createResponse(row._entryId as number, {
+                    prompt,
+                    response: fullText,
+                    input_tokens: tokenUsage?.inputTokens || 0,
+                    output_tokens: tokenUsage?.outputTokens || 0,
+                    total_tokens: tokenUsage?.totalTokens || 0,
+                    estimated_cost: tokenUsage?.estimatedCost || 0
+                })
+
+                successCount++
+            } catch (err) {
+                console.error(`Failed to process row ${row._entryId}:`, err)
+                failCount++
+            }
+        }
+
+        setIsBatchProcessing(false)
+        setBatchProgress({ current: 0, total: 0 })
+
+        // Only clear selection if completed normally
+        if (!stopped) {
+            setSelectedRows(new Set())
+            toast.success(`Batch processing complete: ${successCount} succeeded, ${failCount} failed`)
+        } else {
+            toast.info(`Batch processing stopped: ${successCount} succeeded, ${failCount} failed`)
+        }
+
+        loadData()
+    }
+
+
     if (loading) {
         return (
             <div className="flex items-center justify-center h-full">
@@ -187,6 +296,40 @@ export function ProjectViewer({
                     <p className="text-xs text-muted-foreground">{filteredRows.length} of {rows.length} rows</p>
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0">
+                    {activeTab === "in-queue" && selectedRows.size > 0 && (
+                        <div className="flex items-center gap-2">
+                            {isBatchProcessing ? (
+                                <>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        disabled
+                                        className="gap-2"
+                                    >
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                        Processing {batchProgress.current}/{batchProgress.total}
+                                    </Button>
+                                    <Button
+                                        variant="destructive"
+                                        size="sm"
+                                        onClick={handleStopBatch}
+                                    >
+                                        Stop
+                                    </Button>
+                                </>
+                            ) : (
+                                <Button
+                                    variant="default"
+                                    size="sm"
+                                    onClick={handleBatchProcess}
+                                    className="gap-2 bg-primary hover:bg-primary/90"
+                                >
+                                    <Play className="h-4 w-4" />
+                                    Process Batch ({selectedRows.size})
+                                </Button>
+                            )}
+                        </div>
+                    )}
                     {activeTab === "approved" && filteredRows.length > 0 && (
                         <Button
                             variant="outline"
@@ -250,6 +393,9 @@ export function ProjectViewer({
                         promptTemplate={promptTemplate}
                         onDataChange={loadData}
                         matchFields={matchFields}
+                        showMultiSelect={activeTab === "in-queue"}
+                        selectedRows={selectedRows}
+                        onSelectionChange={setSelectedRows}
                     />
                 </main>
             </div>

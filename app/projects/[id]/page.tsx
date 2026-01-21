@@ -24,6 +24,7 @@ export default function ProjectPage() {
     const [uploading, setUploading] = useState(false)
     const [activeView, setActiveView] = useState<'dashboard' | 'data'>('data')
 
+
     useEffect(() => {
         loadProject()
     }, [projectId])

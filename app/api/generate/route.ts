@@ -67,7 +67,7 @@ Please provide a comprehensive answer based on the search results above. Cite so
 
         // Step 2: Send to Gemini (with or without search context)
         const google = createGoogleGenerativeAI({ apiKey })
-        const modelName = "gemini-3-pro-preview"
+        const modelName = "gemini-2.5-flash"
 
         // Capture usage data in a variable
         let capturedUsage: any = null
