@@ -68,6 +68,21 @@ class ResponseModel {
         const result = await run('DELETE FROM ai_responses WHERE id = ?', [id]);
         return result.changes > 0;
     }
+
+    static async findApprovedByFileId(fileId) {
+        const rows = await all(
+            `SELECT r.*, e.row_number, e.data as entry_data
+             FROM ai_responses r
+             JOIN entries e ON r.entry_id = e.id
+             WHERE e.excel_file_id = ? AND r.status = 'approved'
+             ORDER BY r.approved_at DESC`,
+            [fileId]
+        );
+        return rows.map(row => ({
+            ...row,
+            entry_data: JSON.parse(row.entry_data)
+        }));
+    }
 }
 
 module.exports = ResponseModel;

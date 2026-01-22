@@ -122,4 +122,15 @@ router.get('/files/:id/entries', validateId, checkValidation, async (req, res, n
     }
 });
 
+// GET /api/files/:id/responses/approved - List approved responses for a file
+router.get('/files/:id/responses/approved', validateId, checkValidation, async (req, res, next) => {
+    try {
+        const ResponseModel = require('../models/response.model');
+        const responses = await ResponseModel.findApprovedByFileId(req.params.id);
+        res.json({ responses });
+    } catch (error) {
+        next(error);
+    }
+});
+
 module.exports = router;

@@ -28,13 +28,43 @@ export function ExportToExcelDialog({
 }: ExportToExcelDialogProps) {
     // Initialize with all columns selected except internal ones
     const visibleColumns = columns.filter(col => !col.startsWith('_'))
+    const hasValidatedData = columns.includes("Validated Data")
 
-    const [selectedColumns, setSelectedColumns] = useState<string[]>(visibleColumns)
+    // If we have validated data, extract available fields from the first row
+    const [availableColumns, setAvailableColumns] = useState<string[]>(() => {
+        if (!hasValidatedData || rows.length === 0) {
+            return visibleColumns
+        }
+
+        try {
+            const firstRowValidatedData = rows[0]["Validated Data"]
+            if (firstRowValidatedData) {
+                const parsed = JSON.parse(firstRowValidatedData)
+                const validatedFields = Object.keys(parsed.validated_data || {})
+
+                // Merge original columns (excluding Validated Data) with validated fields
+                const allColumns = [
+                    ...visibleColumns.filter(col => col !== "Validated Data"),
+                    ...validatedFields.filter(field => !visibleColumns.includes(field))
+                ]
+                return allColumns
+            }
+        } catch (error) {
+            console.error("Failed to parse validated data for column detection:", error)
+        }
+
+        return visibleColumns
+    })
+
+    const [selectedColumns, setSelectedColumns] = useState<string[]>(() => {
+        // For validated data, select all available columns by default
+        return availableColumns
+    })
 
     // Map of original column name to display name
     const [columnNames, setColumnNames] = useState<Record<string, string>>(() => {
         const initial: Record<string, string> = {}
-        visibleColumns.forEach(col => {
+        availableColumns.forEach(col => {
             // Convert snake_case or camelCase to Title Case
             initial[col] = col
                 .replace(/_/g, ' ')
@@ -63,7 +93,7 @@ export function ExportToExcelDialog({
     }
 
     const handleSelectAll = () => {
-        setSelectedColumns(visibleColumns)
+        setSelectedColumns(availableColumns)
     }
 
     const handleDeselectAll = () => {
@@ -77,23 +107,86 @@ export function ExportToExcelDialog({
         }
 
         try {
-            // Filter data to only include selected columns with renamed headers
-            const exportData = rows.map(row => {
-                const filteredRow: any = {}
-                selectedColumns.forEach(col => {
-                    // Use the renamed column name as the key
-                    const displayName = columnNames[col] || col
-                    filteredRow[displayName] = row[col]
+            // Check if we're exporting validated data (from approved tab)
+            const hasValidatedData = columns.includes("Validated Data")
+
+            let exportData: any[]
+
+            if (hasValidatedData) {
+                // Extract validated_data from each row's JSON response
+                exportData = rows.map(row => {
+                    try {
+                        const validatedDataStr = row["Validated Data"]
+                        if (!validatedDataStr) return {}
+
+                        // Parse the JSON response
+                        const parsedResponse = JSON.parse(validatedDataStr)
+
+                        // Extract validated_data object
+                        const validatedData = parsedResponse.validated_data || {}
+
+                        // Filter to only include selected columns with renamed headers
+                        const filteredRow: any = {}
+                        selectedColumns.forEach(col => {
+                            if (col === "Validated Data") {
+                                // Skip the "Validated Data" column itself, we're extracting its contents
+                                return
+                            }
+                            const displayName = columnNames[col] || col
+                            // Try to get from validated data, fallback to original row data
+                            filteredRow[displayName] = validatedData[col] !== undefined
+                                ? validatedData[col]
+                                : row[col]
+                        })
+
+                        // Add all fields from validated_data that aren't in columns
+                        Object.keys(validatedData).forEach(key => {
+                            const displayName = columnNames[key] || key
+                                .replace(/_/g, ' ')
+                                .replace(/([A-Z])/g, ' $1')
+                                .split(' ')
+                                .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                                .join(' ')
+                                .trim()
+
+                            if (!filteredRow.hasOwnProperty(displayName)) {
+                                filteredRow[displayName] = validatedData[key]
+                            }
+                        })
+
+                        return filteredRow
+                    } catch (error) {
+                        console.error("Error parsing validated data for row:", error)
+                        // Fallback to regular export for this row
+                        const filteredRow: any = {}
+                        selectedColumns.forEach(col => {
+                            if (col !== "Validated Data") {
+                                const displayName = columnNames[col] || col
+                                filteredRow[displayName] = row[col]
+                            }
+                        })
+                        return filteredRow
+                    }
                 })
-                return filteredRow
-            })
+            } else {
+                // Regular export (non-validated data)
+                exportData = rows.map(row => {
+                    const filteredRow: any = {}
+                    selectedColumns.forEach(col => {
+                        // Use the renamed column name as the key
+                        const displayName = columnNames[col] || col
+                        filteredRow[displayName] = row[col]
+                    })
+                    return filteredRow
+                })
+            }
 
             // Create worksheet
             const worksheet = XLSX.utils.json_to_sheet(exportData)
 
-            // Auto-size columns based on renamed headers
-            const columnWidths = selectedColumns.map(col => {
-                const displayName = columnNames[col] || col
+            // Auto-size columns
+            const allColumnNames = Object.keys(exportData[0] || {})
+            const columnWidths = allColumnNames.map(displayName => {
                 return {
                     wch: Math.max(
                         displayName.length,
@@ -105,7 +198,7 @@ export function ExportToExcelDialog({
 
             // Create workbook
             const workbook = XLSX.utils.book_new()
-            XLSX.utils.book_append_sheet(workbook, worksheet, "Data")
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Validated Data")
 
             // Generate file name with timestamp
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5)
@@ -131,14 +224,17 @@ export function ExportToExcelDialog({
                         Export to Excel
                     </DialogTitle>
                     <DialogDescription>
-                        Select columns and customize their names for the Excel export
+                        {hasValidatedData
+                            ? "Exporting AI-validated data from approved responses. Select which fields to include in the Excel export."
+                            : "Select columns and customize their names for the Excel export"
+                        }
                     </DialogDescription>
                 </DialogHeader>
 
                 <div className="space-y-4">
                     <div className="flex items-center justify-between">
                         <p className="text-sm text-muted-foreground">
-                            {selectedColumns.length} of {visibleColumns.length} columns selected
+                            {selectedColumns.length} of {availableColumns.length} columns selected
                         </p>
                         <div className="flex gap-2">
                             <Button
@@ -162,7 +258,7 @@ export function ExportToExcelDialog({
 
                     <ScrollArea className="h-[350px] border rounded-md p-4">
                         <div className="space-y-3">
-                            {visibleColumns.map(column => (
+                            {availableColumns.map(column => (
                                 <div key={column} className="flex items-start gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors">
                                     <Checkbox
                                         id={`column-${column}`}

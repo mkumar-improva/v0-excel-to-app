@@ -61,6 +61,7 @@ export interface Entry {
   last_generated_at?: string
   last_approved_at?: string
   latest_response_text?: string
+  approved_response_text?: string
 }
 
 export interface AIResponse {
@@ -77,6 +78,7 @@ export interface AIResponse {
   approved_at?: string
   created_at: string
   updated_at: string
+  entry_data?: Record<string, unknown>
 }
 
 export interface SourceReference {

@@ -87,6 +87,10 @@ export const api = {
             const res = await fetchAPI<{ entries: Entry[] }>(`/files/${id}/entries`)
             return res.entries
         },
+        listApprovedResponses: async (id: number) => {
+            const res = await fetchAPI<{ responses: AIResponse[] }>(`/files/${id}/responses/approved`)
+            return res.responses
+        },
     },
     entries: {
         listResponses: async (id: number) => {

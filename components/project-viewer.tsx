@@ -45,6 +45,7 @@ export function ProjectViewer({
     const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set())
     const [isBatchProcessing, setIsBatchProcessing] = useState(false)
     const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 })
+    const [approvedResponses, setApprovedResponses] = useState<any[]>([])
 
 
     const matchFields = useMemo(() => {
@@ -79,15 +80,17 @@ export function ProjectViewer({
     const loadData = async () => {
         try {
             setLoading(true)
-            const [fileData, entriesData] = await Promise.all([
+            const [fileData, entriesData, approvedData] = await Promise.all([
                 api.files.get(fileId),
-                api.files.listEntries(fileId)
+                api.files.listEntries(fileId),
+                api.files.listApprovedResponses(fileId)
             ])
 
             setFile(fileData)
 
             const processedRows = entriesData.map(entry => ({
                 ...entry.data,
+                "Validated Data": entry.approved_response_text || "",
                 _entryId: entry.id,
                 _responseCount: entry.response_count || 0,
                 _approvedCount: entry.approved_count || 0,
@@ -113,6 +116,57 @@ export function ProjectViewer({
             })
 
             setRows(processedRows)
+
+            const processedApproved = approvedData.map(resp => {
+                let parsed: any = {}
+                try {
+                    // Try to find JSON in the response
+                    const jsonMatch = resp.response.match(/\{[\s\S]*\}/)
+                    const jsonString = jsonMatch ? jsonMatch[0] : resp.response
+                    parsed = JSON.parse(jsonString)
+                } catch (e) {
+                    console.error("Failed to parse response", e)
+                }
+
+                const validated = parsed.validated_data || parsed
+
+                const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+                const getCI = (obj: any, targetKey: string) => {
+                    if (!obj) return "";
+                    const keys = Object.keys(obj);
+                    const targetNorm = normalize(targetKey);
+                    const foundKey = keys.find(k => normalize(k) === targetNorm);
+                    return foundKey ? obj[foundKey] : "";
+                };
+
+                // Find the actual column name for Service Category from file columns if it exists
+                const serviceCategoryCol = file?.columns.find(col => normalize(col).includes('servicecategory') || normalize(col) === 'category');
+
+                return {
+                    "Service Category": serviceCategoryCol ? (resp.entry_data as any)[serviceCategoryCol] : getCI(resp.entry_data, "Service Category"),
+                    ...resp.entry_data,
+                    ...resp,
+                    "Location": getCI(validated, "location"),
+                    "Address": getCI(validated, "address"),
+                    "City": getCI(validated, "city"),
+                    "State": getCI(validated, "state"),
+                    "Zip": getCI(validated, "zip"),
+                    "Phone": getCI(validated, "phone"),
+                    "Fax": getCI(validated, "fax"),
+                    "Website": getCI(validated, "website"),
+                    "Validated Data": resp.response,
+                    "Model": resp.model,
+                    "Tokens": resp.total_tokens,
+                    "Cost": resp.estimated_cost ? `$${resp.estimated_cost.toFixed(4)}` : "$0.0000",
+                    "Approved At": resp.approved_at ? new Date(resp.approved_at).toLocaleString() : "",
+                    _entryId: resp.entry_id,
+                    _responseCount: 1,
+                    _approvedCount: 1
+                }
+            })
+
+            setApprovedResponses(processedApproved)
 
         } catch (err) {
             console.error(err)
@@ -145,6 +199,46 @@ export function ProjectViewer({
     const handleStopBatch = () => {
         stopBatchRef.current = true
     }
+
+    const displayRows = useMemo(() => {
+        if (activeTab === "approved") {
+            return approvedResponses
+        }
+
+        return rows.filter((row) => {
+            // Apply column filters
+            const passesFilters = Object.entries(filters).every(([column, filterValues]) => {
+                if (!filterValues || filterValues.length === 0) return true
+                const cellValue = String(row[column] ?? "")
+                return filterValues.includes(cellValue)
+            })
+
+            if (!passesFilters) return false
+
+            // Apply tab filter
+            const responseCount = row._responseCount || 0
+            const approvedCount = row._approvedCount || 0
+
+            switch (activeTab) {
+                case "in-queue":
+                    return responseCount === 0
+                case "generated":
+                    // Show only responses that are generated but NOT approved
+                    return responseCount > 0 && approvedCount === 0
+                case "approved":
+                    return approvedCount > 0
+                default:
+                    return true
+            }
+        })
+    }, [activeTab, rows, approvedResponses, filters])
+
+    const displayColumns = useMemo(() => {
+        if (activeTab === "approved") {
+            return ["Service Category", "Location", "Address", "City", "State", "Zip", "Phone", "Fax", "Website", "Model", "Tokens", "Cost", "Approved At"]
+        }
+        return file?.columns || []
+    }, [activeTab, file?.columns])
 
     const handleBatchProcess = async () => {
         if (selectedRows.size === 0) {
@@ -261,39 +355,12 @@ export function ProjectViewer({
         )
     }
 
-    const filteredRows = rows.filter((row) => {
-        // Apply column filters
-        const passesFilters = Object.entries(filters).every(([column, filterValues]) => {
-            if (!filterValues || filterValues.length === 0) return true
-            const cellValue = String(row[column] ?? "")
-            return filterValues.includes(cellValue)
-        })
-
-        if (!passesFilters) return false
-
-        // Apply tab filter
-        const responseCount = row._responseCount || 0
-        const approvedCount = row._approvedCount || 0
-
-        switch (activeTab) {
-            case "in-queue":
-                return responseCount === 0
-            case "generated":
-                // Show only responses that are generated but NOT approved
-                return responseCount > 0 && approvedCount === 0
-            case "approved":
-                return approvedCount > 0
-            default:
-                return true
-        }
-    })
-
     return (
         <div className="flex flex-col h-full overflow-hidden">
             <header className="flex items-center gap-4 border-b px-4 py-2 bg-background shrink-0">
                 <div className="flex-1 min-w-0">
                     <h2 className="text-lg font-semibold truncate">{file.file_name}</h2>
-                    <p className="text-xs text-muted-foreground">{filteredRows.length} of {rows.length} rows</p>
+                    <p className="text-xs text-muted-foreground">{displayRows.length} of {activeTab === 'approved' ? approvedResponses.length : rows.length} {activeTab === 'approved' ? 'responses' : 'rows'}</p>
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0">
                     {activeTab === "in-queue" && selectedRows.size > 0 && (
@@ -330,7 +397,7 @@ export function ProjectViewer({
                             )}
                         </div>
                     )}
-                    {activeTab === "approved" && filteredRows.length > 0 && (
+                    {activeTab === "approved" && displayRows.length > 0 && (
                         <Button
                             variant="outline"
                             size="sm"
@@ -388,8 +455,8 @@ export function ProjectViewer({
 
                 <main className="flex-1 overflow-hidden">
                     <DataTable
-                        columns={file.columns}
-                        rows={filteredRows}
+                        columns={displayColumns}
+                        rows={displayRows}
                         promptTemplate={promptTemplate}
                         onDataChange={loadData}
                         matchFields={matchFields}
@@ -426,8 +493,8 @@ export function ProjectViewer({
             <ExportToExcelDialog
                 open={exportDialogOpen}
                 onOpenChange={setExportDialogOpen}
-                rows={filteredRows}
-                columns={file.columns}
+                rows={displayRows}
+                columns={displayColumns}
                 fileName={`${file.file_name.replace(/\.[^/.]+$/, '')}_approved`}
             />
         </div>
