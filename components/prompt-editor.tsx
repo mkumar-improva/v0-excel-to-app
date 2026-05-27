@@ -75,22 +75,22 @@ export function PromptEditor({ template, onTemplateChange, columns }: PromptEdit
   }
 
   return (
-    <div className="p-4">
-      <h2 className="text-sm font-semibold text-foreground mb-2">Prompt Template</h2>
-      <p className="text-xs text-muted-foreground mb-4">Use {"{{ColumnName}}"} syntax to insert row values</p>
+    <div className="flex flex-col h-full min-h-0 p-1">
+      <h2 className="text-sm font-semibold text-foreground mb-1">Prompt Template</h2>
+      <p className="text-xs text-muted-foreground mb-3">Use {"{{ColumnName}}"} syntax to insert row values</p>
 
       <Textarea
         ref={textareaRef}
         value={localTemplate}
         onChange={(e) => handleChange(e.target.value)}
         placeholder="Enter your prompt template..."
-        className="min-h-[200px] max-h-[500px] text-sm resize-none mb-4"
+        className="flex-1 min-h-[120px] text-sm resize-none mb-3"
       />
 
       {columns.length > 0 && (
-        <div>
-          <h3 className="text-xs font-medium text-muted-foreground mb-2">Available Columns</h3>
-          <div className="flex flex-wrap gap-1.5">
+        <div className="shrink-0">
+          <h3 className="text-xs font-medium text-muted-foreground mb-1.5">Available Columns</h3>
+          <div className="flex flex-wrap gap-1.5 max-h-[80px] overflow-y-auto p-0.5">
             {columns.map((column) => (
               <Badge
                 key={column}

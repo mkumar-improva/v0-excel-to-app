@@ -105,6 +105,8 @@ export const api = {
             output_tokens?: number;
             total_tokens?: number;
             estimated_cost?: number;
+            status?: 'pending' | 'approved' | 'rejected';
+            approved_at?: string;
         }) => {
             const res = await fetchAPI<{ response: AIResponse }>(`/entries/${id}/responses`, {
                 method: "POST",

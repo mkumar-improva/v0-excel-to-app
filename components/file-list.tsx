@@ -56,10 +56,10 @@ export function FileList({ projectId, selectedFileId, onFileSelect, refreshTrigg
     }
 
     const FileListContent = () => (
-        <div className="flex-col bg-card h-full transition-all duration-300 ease-in-out relative flex">
+        <div className="flex-col bg-card h-full transition-all duration-300 ease-in-out relative flex w-full min-w-0 overflow-hidden">
             {/* Removed internal upload button section */}
-            <ScrollArea className="flex-1">
-                <div className="p-2 space-y-2">
+            <div className="flex-1 w-full min-w-0 overflow-y-auto overflow-x-hidden">
+                <div className="p-2 space-y-2 w-full min-w-0 flex flex-col">
                     {loading ? (
                         <p className="p-4 text-sm text-center text-muted-foreground">Loading files...</p>
                     ) : files.length === 0 ? (
@@ -70,17 +70,17 @@ export function FileList({ projectId, selectedFileId, onFileSelect, refreshTrigg
                                 key={file.id}
                                 onClick={() => onFileSelect(file.id)}
                                 className={`
-                  group flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors
+                  group flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors gap-2 w-full min-w-0
                   ${selectedFileId === file.id
                                         ? "bg-primary text-primary-foreground"
                                         : "hover:bg-muted"
                                     }
                 `}
                             >
-                                <div className="flex items-center min-w-0">
+                                <div className="flex items-center min-w-0 flex-1">
                                     <FileSpreadsheet className="mr-3 h-4 w-4 flex-shrink-0" />
-                                    <div className="min-w-0">
-                                        <p className="text-sm font-medium truncate">{file.file_name}</p>
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-sm font-medium truncate" title={file.file_name}>{file.file_name}</p>
                                         <p className={`text-xs truncate ${selectedFileId === file.id ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
                                             {formatDistanceToNow(new Date(file.uploaded_at))} ago
                                         </p>
@@ -90,8 +90,11 @@ export function FileList({ projectId, selectedFileId, onFileSelect, refreshTrigg
                                     variant="ghost"
                                     size="icon"
                                     className={`
-                    opacity-0 group-hover:opacity-100 h-8 w-8
-                    ${selectedFileId === file.id ? "hover:bg-primary-foreground/20 hover:text-white" : "hover:text-red-500"}
+                    h-8 w-8 flex-shrink-0 opacity-80 hover:opacity-100 transition-opacity
+                    ${selectedFileId === file.id 
+                                            ? "hover:bg-primary-foreground/20 text-primary-foreground hover:text-white" 
+                                            : "text-muted-foreground hover:text-red-500 hover:bg-destructive/10"
+                                        }
                   `}
                                     onClick={(e) => handleDelete(e, file.id)}
                                 >
@@ -101,7 +104,7 @@ export function FileList({ projectId, selectedFileId, onFileSelect, refreshTrigg
                         ))
                     )}
                 </div>
-            </ScrollArea>
+            </div>
         </div>
     )
 
@@ -109,10 +112,10 @@ export function FileList({ projectId, selectedFileId, onFileSelect, refreshTrigg
         <>
             {/* Desktop Sidebar */}
             <div
-                className={`hidden md:flex flex-col border-r bg-card h-full transition-all duration-300 ease-in-out relative ${collapsed ? "w-12" : "w-64"
+                className={`hidden md:flex flex-col border-r bg-card h-full transition-all duration-300 ease-in-out relative flex-shrink-0 min-w-0 ${collapsed ? "w-12" : "w-64"
                     }`}
             >
-                <div className="absolute -right-3 top-3 z-10">
+                <div className="absolute -right-3 top-3 z-50">
                     <Button
                         variant="ghost"
                         size="icon"

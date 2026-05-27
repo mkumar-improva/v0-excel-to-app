@@ -14,6 +14,109 @@ import { ExcelFileDB, FilterState, Project } from "@/lib/types"
 import { toast } from "sonner"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 
+const DEFAULT_PROMPT_TEMPLATE = `System Role:
+You are an expert Data Verification Auditor. Your job is to validate US business contact information — primarily in healthcare and commercial sectors — with high accuracy by aggregating data from the public web.
+Source Trust Hierarchy (Highest to Lowest):
+Official Company Website > Google Business Profile > BBB > Yelp / Third-Party Directories > NPI Registry > Government / Secretary of State Registry
+
+Input Data:
+Location: {{LOCATION}}
+Address: {{ADDRESS}}
+City: {{CITY}}
+State: {{STATE}}
+Zip: {{ZIP}}
+Phone: {{PHONE}}
+Fax: {{FAX}}
+
+Instructions:
+1. Search & Discovery:
+
+First, locate the Official Company Website. This is the highest-confidence source and should anchor validation.
+If no official website is found, use Google Business Profile as the primary fallback — treat it as near-authoritative for current address and phone.
+Supplement with BBB, Yelp, Healthgrades, Zocdoc, or other active third-party directories.
+Use NPI Registry or government registries as supporting references only — cross-check them but do not override current web sources with their data.
+Search using: Provider/Business Name + Full Address as the primary lookup key.
+
+2. Matching Rules (STRICT):
+
+MATCH: Name matches AND Address matches (normalized/fuzzy) AND (Phone OR Fax matches).
+NOT MATCH: Business not found, address mismatch with no redirect, or conflicting contact info with no secondary confirmation.
+Moved: Official website or Google Business Profile shows a different current address than the input.
+Address Normalization: Treat "St" = "Street", "Rd" = "Road", "Ave" = "Avenue", "Blvd" = "Boulevard" implicitly. Ignore suite/unit formatting differences (e.g., "Ste 100" vs "#100").
+Phone Normalization: Strip dashes, spaces, parentheses, and country codes before comparing.
+
+3. Validation Logic:
+
+Name/Location: Standardize the business name. For national chains or franchises, verify the specific branch location — do not validate against a generic corporate headquarters.
+Address: Determine the currently active address from the official website or Google Business Profile. If the business has relocated, record the new address and set status to "Moved". Only validate within the state provided in the input. If multiple branches exist, match the one corresponding to the input city/state.
+Phone: Match the primary phone number from the official website or Google Business Profile. Note any discrepancies.
+Fax: Attempt to verify via official website or directory listings. If unverified but plausible (e.g., healthcare provider), retain the original and note "Unverified". If the business clearly does not use fax (e.g., modern retail), set to null and note accordingly.
+Government/Registry Conflicts: If NPI or Secretary of State data conflicts with the official website or Google Business Profile, flag it as "Government registry may contain outdated registration data" — do not use it to downgrade confidence if higher-trust sources confirm the data.
+
+4. Constraints:
+
+Do NOT guess or infer data without a source.
+Return confidence_score: 0.0 if no valid source is found.
+Do not make assumptions about address changes, closures, or mergers without source evidence.
+Every validated field must be traceable to a specific source URL.
+
+5. Source Collection:
+
+Record the specific URL for every source used.
+Target 8 to 10 distinct sources where possible.
+Example source mix: Official Website, Google Business Profile, BBB, Yelp, Healthgrades, NPI Registry, LinkedIn, Zocdoc, State Licensing Board, YellowPages.
+
+6. Aggregation — Conflict Resolution:
+When sources conflict, resolve using this priority order:
+
+Official Company Website
+Google Business Profile
+BBB
+Yelp / Healthgrades / Third-Party Directories
+NPI Registry
+Secretary of State / Government Registry (treat as historical — flag if stale)
+
+
+Output Requirements:
+
+Return ONLY a valid JSON object.
+No markdown formatting (no \`\`\`json blocks).
+No introductory text or explanations outside the JSON.
+Strictly follow this schema:
+
+{
+  "original_input": {
+    "location": "String",
+    "address": "String",
+    "city": "String",
+    "state": "String",
+    "zip": "String",
+    "phone": "String",
+    "fax": "String"
+  },
+  "validated_data": {
+    "location": "String",
+    "address": "String",
+    "city": "String",
+    "state": "String",
+    "zip": "String",
+    "phone": "String",
+    "fax": "String"
+  },
+  "status": "String (MATCH | NOT MATCH | Moved | Unverified)",
+  "changes_detected": Boolean,
+  "confidence_score": Number (0.0 to 1.0),
+  "confidence_score_explanation": "String (dynamic, detailed explanation of how this specific confidence score was calculated and why it was assigned this value based on the verified and conflicting details)",
+  "data_quality_notes": "String (brief explanation of match reasoning, source conflicts, and any stale government data flagged)",
+  "source_references": [
+    {
+      "source_name": "String (e.g., Official Website, Google Business Profile, BBB)",
+      "url": "String (exact link)",
+      "reference_confidence": Number (0.0 to 1.0)
+    }
+  ]
+}`;
+
 interface ProjectViewerProps {
     fileId: number
     project: Project
@@ -35,7 +138,7 @@ export function ProjectViewer({
     const [rows, setRows] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
     const [promptTemplate, setPromptTemplate] = useState<string>(
-        project.prompt_template || "Generate a summary for {{Name}}..."
+        project.prompt_template || DEFAULT_PROMPT_TEMPLATE
     )
     const [filters, setFilters] = useState<FilterState>({})
     const [leftPanelOpen, setLeftPanelOpen] = useState(true)
@@ -62,9 +165,7 @@ export function ProjectViewer({
 
     // Update local state when project prop changes (e.g. initial load)
     useEffect(() => {
-        if (project.prompt_template) {
-            setPromptTemplate(project.prompt_template)
-        }
+        setPromptTemplate(project.prompt_template || DEFAULT_PROMPT_TEMPLATE)
     }, [project.prompt_template])
 
     // Reset filters only when file changes
@@ -88,17 +189,44 @@ export function ProjectViewer({
 
             setFile(fileData)
 
-            const processedRows = entriesData.map(entry => ({
-                ...entry.data,
-                "Validated Data": entry.approved_response_text || "",
-                _entryId: entry.id,
-                _responseCount: entry.response_count || 0,
-                _approvedCount: entry.approved_count || 0,
-                _lastActivity: [entry.last_generated_at, entry.last_approved_at]
-                    .filter(Boolean)
-                    .sort()
-                    .pop() || ''
-            }))
+            const processedRows = entriesData.map(entry => {
+                let confidenceScoreVal = "-"
+                if (entry.latest_response_text) {
+                    try {
+                        const jsonMatch = entry.latest_response_text.match(/\{[\s\S]*\}/)
+                        const jsonString = jsonMatch ? jsonMatch[0] : entry.latest_response_text
+                        const parsed = JSON.parse(jsonString)
+                        const rawConfidence = parsed.confidence_score
+                        if (rawConfidence !== undefined && rawConfidence !== null) {
+                            const numConf = Number(rawConfidence)
+                            if (!isNaN(numConf)) {
+                                if (numConf <= 1.0) {
+                                    confidenceScoreVal = `${Math.round(numConf * 100)}%`
+                                } else {
+                                    confidenceScoreVal = `${Math.round(numConf)}%`
+                                }
+                            } else {
+                                confidenceScoreVal = String(rawConfidence)
+                            }
+                        }
+                    } catch (e) {
+                        console.error("Failed to parse confidence score from entry response", e)
+                    }
+                }
+
+                return {
+                    ...entry.data,
+                    "Validated Data": entry.approved_response_text || "",
+                    "Confidence Score": confidenceScoreVal,
+                    _entryId: entry.id,
+                    _responseCount: entry.response_count || 0,
+                    _approvedCount: entry.approved_count || 0,
+                    _lastActivity: [entry.last_generated_at, entry.last_approved_at]
+                        .filter(Boolean)
+                        .sort()
+                        .pop() || ''
+                }
+            })
 
 
 
@@ -143,6 +271,21 @@ export function ProjectViewer({
                 // Find the actual column name for Service Category from file columns if it exists
                 const serviceCategoryCol = file?.columns.find(col => normalize(col).includes('servicecategory') || normalize(col) === 'category');
 
+                const rawConfidence = parsed.confidence_score
+                let confidenceScoreVal = "-"
+                if (rawConfidence !== undefined && rawConfidence !== null) {
+                    const numConf = Number(rawConfidence)
+                    if (!isNaN(numConf)) {
+                        if (numConf <= 1.0) {
+                            confidenceScoreVal = `${Math.round(numConf * 100)}%`
+                        } else {
+                            confidenceScoreVal = `${Math.round(numConf)}%`
+                        }
+                    } else {
+                        confidenceScoreVal = String(rawConfidence)
+                    }
+                }
+
                 return {
                     "Service Category": serviceCategoryCol ? (resp.entry_data as any)[serviceCategoryCol] : getCI(resp.entry_data, "Service Category"),
                     ...resp.entry_data,
@@ -160,6 +303,7 @@ export function ProjectViewer({
                     "Tokens": resp.total_tokens,
                     "Cost": resp.estimated_cost ? `$${resp.estimated_cost.toFixed(4)}` : "$0.0000",
                     "Approved At": resp.approved_at ? new Date(resp.approved_at).toLocaleString() : "",
+                    "Confidence Score": confidenceScoreVal,
                     _entryId: resp.entry_id,
                     _responseCount: 1,
                     _approvedCount: 1
@@ -235,7 +379,10 @@ export function ProjectViewer({
 
     const displayColumns = useMemo(() => {
         if (activeTab === "approved") {
-            return ["Service Category", "Location", "Address", "City", "State", "Zip", "Phone", "Fax", "Website", "Model", "Tokens", "Cost", "Approved At"]
+            return ["Service Category", "Location", "Address", "City", "State", "Zip", "Phone", "Fax", "Website", "Model", "Tokens", "Cost", "Approved At", "Confidence Score"]
+        }
+        if (activeTab === "generated") {
+            return [...(file?.columns || []), "Confidence Score"]
         }
         return file?.columns || []
     }, [activeTab, file?.columns])
@@ -268,7 +415,7 @@ export function ProjectViewer({
                 // Generate prompt from template
                 let prompt = promptTemplate
                 file?.columns.forEach((col) => {
-                    const regex = new RegExp(`{{${col}}}`, "g")
+                    const regex = new RegExp(`{{${col}}}`, "gi")
                     prompt = prompt.replace(regex, String(row[col] ?? ""))
                 })
 
@@ -307,6 +454,20 @@ export function ProjectViewer({
                     }
                 }
 
+                // Check for auto-approval (confidence score 90% or above)
+                let isAutoApprove = false
+                try {
+                    const jsonMatch = fullText.match(/\{[\s\S]*\}/)
+                    const jsonString = jsonMatch ? jsonMatch[0] : fullText
+                    const parsed = JSON.parse(jsonString)
+                    const confidence = Number(parsed.confidence_score)
+                    if (!isNaN(confidence) && (confidence >= 90 || (confidence >= 0.9 && confidence <= 1.0))) {
+                        isAutoApprove = true
+                    }
+                } catch (e) {
+                    // Not JSON or missing confidence_score, skip auto-approve
+                }
+
                 // Save response
                 await api.entries.createResponse(row._entryId as number, {
                     prompt,
@@ -314,7 +475,9 @@ export function ProjectViewer({
                     input_tokens: tokenUsage?.inputTokens || 0,
                     output_tokens: tokenUsage?.outputTokens || 0,
                     total_tokens: tokenUsage?.totalTokens || 0,
-                    estimated_cost: tokenUsage?.estimatedCost || 0
+                    estimated_cost: tokenUsage?.estimatedCost || 0,
+                    status: isAutoApprove ? 'approved' : 'pending',
+                    approved_at: isAutoApprove ? new Date().toISOString() : undefined
                 })
 
                 successCount++
@@ -468,19 +631,19 @@ export function ProjectViewer({
             </div>
 
             <Dialog open={promptEditorOpen} onOpenChange={onPromptEditorOpenChange}>
-                <DialogContent className="sm:max-w-[80vw] w-[80vw] max-h-[90vh]">
-                    <DialogHeader>
+                <DialogContent className="sm:max-w-[80vw] w-[80vw] max-h-[85vh] h-[85vh] flex flex-col overflow-hidden p-6 gap-0">
+                    <DialogHeader className="shrink-0 pb-4 border-b">
                         <DialogTitle>Edit Prompt Template</DialogTitle>
                     </DialogHeader>
-                    <div className="flex flex-col h-[700px]">
-                        <div className="flex-1 overflow-hidden">
+                    <div className="flex-1 flex flex-col min-h-0 overflow-hidden pt-4">
+                        <div className="flex-1 min-h-0">
                             <PromptEditor
                                 template={promptTemplate}
                                 onTemplateChange={setPromptTemplate}
                                 columns={file.columns}
                             />
                         </div>
-                        <div className="flex justify-end pt-4 gap-2 border-t mt-4">
+                        <div className="flex justify-end pt-4 gap-2 border-t shrink-0">
                             <Button variant="outline" onClick={() => onPromptEditorOpenChange(false)}>Cancel</Button>
                             <Button onClick={handleTemplateSave} disabled={savingTemplate}>
                                 {savingTemplate ? "Saving..." : "Save Template"}

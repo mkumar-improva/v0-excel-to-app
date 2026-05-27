@@ -40,7 +40,7 @@ export function DataTable({ columns, rows, promptTemplate, onDataChange, matchFi
   const generatePromptFromTemplate = (row: Record<string, unknown>) => {
     let prompt = promptTemplate
     columns.forEach((col) => {
-      const regex = new RegExp(`{{${col}}}`, "g")
+      const regex = new RegExp(`{{${col}}}`, "gi")
       prompt = prompt.replace(regex, String(row[col] ?? ""))
     })
     return prompt
@@ -160,6 +160,28 @@ export function DataTable({ columns, rows, promptTemplate, onDataChange, matchFi
 
   const sortedRows = getSortedRows()
   const isAllSelected = sortedRows.length > 0 && selectedRows.size === sortedRows.length
+
+  const currentIndex = selectedRow ? sortedRows.findIndex(r => r._entryId === selectedRow._entryId) : -1
+  const hasPrev = currentIndex > 0
+  const hasNext = currentIndex >= 0 && currentIndex < sortedRows.length - 1
+
+  const handlePrevRow = () => {
+    if (hasPrev) {
+      const prevRow = sortedRows[currentIndex - 1]
+      setSelectedRow(prevRow)
+      const hasResponse = (prevRow._responseCount as number) > 0
+      setInitialDialogTab(hasResponse ? "response" : "prompt")
+    }
+  }
+
+  const handleNextRow = () => {
+    if (hasNext) {
+      const nextRow = sortedRows[currentIndex + 1]
+      setSelectedRow(nextRow)
+      const hasResponse = (nextRow._responseCount as number) > 0
+      setInitialDialogTab(hasResponse ? "response" : "prompt")
+    }
+  }
 
   return (
     <>
@@ -309,6 +331,10 @@ export function DataTable({ columns, rows, promptTemplate, onDataChange, matchFi
         rowData={selectedRow}
         initialTab={initialDialogTab}
         matchFields={matchFields}
+        onNext={handleNextRow}
+        onPrev={handlePrevRow}
+        hasNext={hasNext}
+        hasPrev={hasPrev}
       />
     </>
   )

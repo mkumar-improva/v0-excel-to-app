@@ -67,13 +67,21 @@ Please provide a comprehensive answer based on the search results above. Cite so
 
         // Step 2: Send to Gemini (with or without search context)
         const google = createGoogleGenerativeAI({ apiKey })
-        const modelName = "gemini-2.5-flash"
+        const modelName = "gemini-3.1-flash-lite"
 
         // Capture usage data in a variable
         let capturedUsage: any = null
 
         const result = await streamText({
             model: google(modelName),
+            system: `You are an expert Data Verification Auditor. Your role is to validate and verify business contact information against the provided web search results.
+Your core objective is to compare the input query attributes with the verified sources:
+1. Always prioritize official company websites and Google Business Profiles for active addresses and phone numbers.
+2. Be strict on matching rules (fuzzy address matching, name alignment, phone normalization).
+3. If the business has moved, record the updated address and set the status to "Moved".
+4. If government registry data (e.g. NPI, state SOS) conflicts with recent web data, flag the government data as potentially stale/outdated.
+5. Provide a precise confidence_score and a dynamic confidence_score_explanation detailing why this specific score was calculated (e.g. detailing why it is 100%, or why it is 84% based on matching or mismatching attributes).
+6. Return ONLY the requested JSON format (no markdown code blocks, no trailing/leading text).`,
             prompt: enhancedPrompt,
             onFinish: async ({ usage }) => {
                 // Capture usage statistics

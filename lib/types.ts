@@ -92,6 +92,7 @@ export interface ResponseData {
   status?: string
   changes_detected?: boolean
   confidence_score?: number
+  confidence_score_explanation?: string
   data_quality_notes?: string
   source_references?: SourceReference[]
 }

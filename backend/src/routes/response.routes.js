@@ -12,7 +12,9 @@ const validateResponse = [
     body('input_tokens').optional().isInt({ min: 0 }),
     body('output_tokens').optional().isInt({ min: 0 }),
     body('total_tokens').optional().isInt({ min: 0 }),
-    body('estimated_cost').optional().isFloat({ min: 0 })
+    body('estimated_cost').optional().isFloat({ min: 0 }),
+    body('status').optional().isIn(['pending', 'approved', 'rejected']),
+    body('approved_at').optional()
 ];
 
 const validateId = [
@@ -48,11 +50,12 @@ router.post('/entries/:id/responses', validateId, validateResponse, checkValidat
             return res.status(404).json({ error: 'Entry not found' });
         }
 
-        const { prompt, response, model, input_tokens, output_tokens, total_tokens, estimated_cost } = req.body;
+        const { prompt, response, model, input_tokens, output_tokens, total_tokens, estimated_cost, status, approved_at } = req.body;
 
         // Debug: Log what we received from frontend
         console.log('🔍 POST /api/entries/:id/responses received:');
         console.log('   Request body token fields:', { input_tokens, output_tokens, total_tokens, estimated_cost });
+        console.log('   Status/ApprovedAt:', { status, approved_at });
 
         const aiResponse = await ResponseModel.create(
             entryId,
@@ -62,7 +65,9 @@ router.post('/entries/:id/responses', validateId, validateResponse, checkValidat
             input_tokens,
             output_tokens,
             total_tokens,
-            estimated_cost
+            estimated_cost,
+            status,
+            approved_at
         );
 
         res.status(201).json({ response: aiResponse });
