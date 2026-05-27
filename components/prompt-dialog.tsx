@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import { ChevronLeft, ChevronRight } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
@@ -20,9 +21,24 @@ interface PromptDialogProps {
   rowData: Record<string, unknown> | null
   initialTab?: "prompt" | "response"
   matchFields?: string[]
+  onNext?: () => void
+  onPrev?: () => void
+  hasNext?: boolean
+  hasPrev?: boolean
 }
 
-export function PromptDialog({ open, onOpenChange, prompt, rowData, initialTab = "prompt", matchFields }: PromptDialogProps) {
+export function PromptDialog({ 
+  open, 
+  onOpenChange, 
+  prompt, 
+  rowData, 
+  initialTab = "prompt", 
+  matchFields,
+  onNext,
+  onPrev,
+  hasNext = false,
+  hasPrev = false
+}: PromptDialogProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [aiResponse, setAiResponse] = useState<string>("")
   const [activeTab, setActiveTab] = useState<string>("prompt")
@@ -134,21 +150,42 @@ export function PromptDialog({ open, onOpenChange, prompt, rowData, initialTab =
     if (!entryId) return
 
     try {
-      const payload = {
+      // Check for auto-approval (confidence score 90% or above)
+      let isAutoApprove = false
+      try {
+        const jsonMatch = fullResponse.match(/\{[\s\S]*\}/)
+        const jsonString = jsonMatch ? jsonMatch[0] : fullResponse
+        const parsed = JSON.parse(jsonString)
+        const confidence = Number(parsed.confidence_score)
+        if (!isNaN(confidence) && (confidence >= 90 || (confidence >= 0.9 && confidence <= 1.0))) {
+          isAutoApprove = true
+        }
+      } catch (e) {
+        // Not JSON or missing confidence_score, skip auto-approve
+      }
+
+      const payload: any = {
         prompt: usedPrompt,
         response: fullResponse,
         model: "gemini-3-pro-preview",
         input_tokens: tokenUsage?.inputTokens,
         output_tokens: tokenUsage?.outputTokens,
         total_tokens: tokenUsage?.totalTokens,
-        estimated_cost: tokenUsage?.estimatedCost
+        estimated_cost: tokenUsage?.estimatedCost,
+        status: isAutoApprove ? 'approved' : 'pending',
+        approved_at: isAutoApprove ? new Date().toISOString() : null
       }
 
       console.log('📤 Frontend: Sending to backend API:', payload)
 
       const resp = await api.entries.createResponse(entryId, payload)
       setLatestResponse(resp)
-      toast.success("Response saved to database")
+
+      if (isAutoApprove) {
+        toast.success("Response auto-approved (90%+ confidence)")
+      } else {
+        toast.success("Response saved to database")
+      }
     } catch (err) {
       console.error("Failed to save response:", err)
       toast.error("Failed to save response to database")
@@ -309,9 +346,33 @@ export function PromptDialog({ open, onOpenChange, prompt, rowData, initialTab =
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[98vw] h-[94vh] sm:max-w-none overflow-hidden flex flex-col p-0">
-        <DialogHeader className="p-6 pb-2 shrink-0">
-          <DialogTitle>Generate AI Prompt</DialogTitle>
-          <DialogDescription>Review the generated prompt and send it to AI</DialogDescription>
+        <DialogHeader className="p-6 pb-2 shrink-0 flex flex-row items-center justify-between">
+          <div className="flex-1 min-w-0">
+            <DialogTitle>Generate AI Prompt</DialogTitle>
+            <DialogDescription>Review the generated prompt and send it to AI</DialogDescription>
+          </div>
+          <div className="flex items-center gap-2 mr-6 shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onPrev}
+              disabled={!hasPrev || isLoading}
+              className="h-8 gap-1"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Prev Row
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onNext}
+              disabled={!hasNext || isLoading}
+              className="h-8 gap-1"
+            >
+              Next Row
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
         </DialogHeader>
 
         <Tabs

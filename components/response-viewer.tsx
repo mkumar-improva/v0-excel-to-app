@@ -3,7 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { ExternalLink, CheckCircle2, AlertTriangle, ArrowRight, Activity, Globe, Monitor } from "lucide-react"
+import { ExternalLink, CheckCircle2, AlertTriangle, ArrowRight, Activity, Globe, Monitor, HelpCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ResponseData } from "@/lib/types"
 import { isSimilarValue } from "@/lib/data-comparison"
@@ -115,7 +115,7 @@ export function ResponseViewer({ data, rawJson, onApprove, onReject, onReiterate
                 </div>
 
                 <div className="flex items-center gap-6 text-sm">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 relative group cursor-help">
                         <span className="text-muted-foreground">Confidence:</span>
                         <span className={cn(
                             "font-bold",
@@ -125,6 +125,18 @@ export function ResponseViewer({ data, rawJson, onApprove, onReject, onReiterate
                         )}>
                             {confidencePercent}%
                         </span>
+                        <HelpCircle className="h-4 w-4 text-muted-foreground/60 hover:text-muted-foreground transition-colors" />
+                        
+                        {/* Hover Tooltip Box */}
+                        <div className="absolute top-full right-0 mt-2 hidden group-hover:flex flex-col gap-2 p-4 bg-popover text-popover-foreground border border-border rounded-lg shadow-xl z-50 w-80 text-xs font-normal pointer-events-none transition-all duration-200">
+                            <h5 className="font-semibold text-sm border-b pb-1.5 mb-1 text-foreground">Confidence Score Reasoning</h5>
+                            <p className="leading-relaxed text-foreground font-medium">
+                                Why {confidencePercent}%?
+                            </p>
+                            <p className="leading-relaxed text-muted-foreground">
+                                {data.confidence_score_explanation || data.data_quality_notes || `This score represents the level of certainty based on verified source matching.`}
+                            </p>
+                        </div>
                     </div>
 
                     {typeof matchPercentage === 'number' && (
