@@ -38,11 +38,12 @@ router.post('/search',
                 });
             }
 
-            const { prompt, queries, maxResults, maxCharsPerResult } = req.body;
+            const { prompt, promptTemplate, queries, maxResults, maxCharsPerResult } = req.body;
 
             // Execute search
             const searchResult = await enhancedSearch(prompt, {
                 queries,
+                promptTemplate,
                 maxResults,
                 maxCharsPerResult
             });

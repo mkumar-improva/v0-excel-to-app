@@ -26,38 +26,54 @@ export function ExportToExcelDialog({
     columns,
     fileName = "export"
 }: ExportToExcelDialogProps) {
-    // Initialize with all columns selected except internal ones
-    const visibleColumns = columns.filter(col => !col.startsWith('_'))
     const hasValidatedData = columns.includes("Validated Data")
+    const preferredOrder = [
+        "Name",
+        "Facility Type",
+        "Address",
+        "City",
+        "State",
+        "Zip",
+        "Telephone",
+        "Fax",
+        "Confidence Score",
+        "Comment"
+    ]
 
-    // If we have validated data, extract available fields from the first row
     const [availableColumns, setAvailableColumns] = useState<string[]>(() => {
-        if (!hasValidatedData || rows.length === 0) {
-            return visibleColumns
-        }
-
-        try {
-            const firstRowValidatedData = rows[0]["Validated Data"]
-            if (firstRowValidatedData) {
-                const parsed = JSON.parse(firstRowValidatedData)
-                const validatedFields = Object.keys(parsed.validated_data || {})
-
-                // Merge original columns (excluding Validated Data) with validated fields
-                const allColumns = [
-                    ...visibleColumns.filter(col => col !== "Validated Data"),
-                    ...validatedFields.filter(field => !visibleColumns.includes(field))
-                ]
-                return allColumns
+        const cols = new Set<string>()
+        
+        columns.forEach(col => {
+            if (!col.startsWith('_') && col !== "Validated Data" && col !== "response") {
+                cols.add(col)
             }
-        } catch (error) {
-            console.error("Failed to parse validated data for column detection:", error)
+        })
+        
+        if (rows.length > 0) {
+            Object.keys(rows[0]).forEach(key => {
+                if (!key.startsWith('_') && key !== "Validated Data" && key !== "response" && key !== "entry_data" && key !== "prompt") {
+                    cols.add(key)
+                }
+            })
         }
-
-        return visibleColumns
+        
+        const allCols = Array.from(cols)
+        allCols.sort((a, b) => {
+            const idxA = preferredOrder.indexOf(a)
+            const idxB = preferredOrder.indexOf(b)
+            if (idxA !== -1 && idxB !== -1) return idxA - idxB
+            if (idxA !== -1) return -1
+            if (idxB !== -1) return 1
+            return a.localeCompare(b)
+        })
+        
+        return allCols
     })
 
     const [selectedColumns, setSelectedColumns] = useState<string[]>(() => {
-        // For validated data, select all available columns by default
+        // Default select the preferred columns if they are available
+        const defaults = availableColumns.filter(col => preferredOrder.includes(col))
+        if (defaults.length > 0) return defaults
         return availableColumns
     })
 
@@ -133,9 +149,44 @@ export function ExportToExcelDialog({
                                 return
                             }
                             const displayName = columnNames[col] || col
-                            // Try to get from validated data, fallback to original row data
-                            filteredRow[displayName] = validatedData[col] !== undefined
-                                ? validatedData[col]
+                            const lowercaseCol = col.toLowerCase()
+                            
+                            // Check if present at root of response JSON (e.g. comment, model, tokens, cost)
+                            let rootVal = parsedResponse[col] !== undefined
+                                ? parsedResponse[col]
+                                : (parsedResponse[lowercaseCol] !== undefined
+                                    ? parsedResponse[lowercaseCol]
+                                    : undefined)
+
+                            // Special mappings for display fields
+                            if (col === "Tokens" && parsedResponse.total_tokens !== undefined) {
+                                rootVal = parsedResponse.total_tokens
+                            }
+                            if (col === "Cost" && parsedResponse.estimated_cost !== undefined) {
+                                rootVal = parsedResponse.estimated_cost
+                            }
+
+                            // Assign value: try root of parsed JSON first, then validated_data object, then fallback to original row data
+                            let mappedVal = rootVal !== undefined
+                                ? rootVal
+                                : (validatedData[col] !== undefined
+                                    ? validatedData[col]
+                                    : (validatedData[lowercaseCol] !== undefined
+                                        ? validatedData[lowercaseCol]
+                                        : undefined))
+
+                            // Schema translation fallbacks for Location/Name and Phone/Telephone compatibility
+                            if (mappedVal === undefined) {
+                                if (lowercaseCol === "name" || lowercaseCol === "location") {
+                                    mappedVal = validatedData.name ?? validatedData.location ?? validatedData.Name ?? validatedData.Location
+                                } else if (lowercaseCol === "telephone" || lowercaseCol === "phone") {
+                                    mappedVal = validatedData.telephone ?? validatedData.phone ?? validatedData.Telephone ?? validatedData.Phone
+                                }
+                            }
+
+                            // Finally fallback to original row data
+                            filteredRow[displayName] = mappedVal !== undefined
+                                ? mappedVal
                                 : row[col]
                         })
 

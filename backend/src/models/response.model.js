@@ -77,7 +77,7 @@ class ResponseModel {
              FROM ai_responses r
              JOIN entries e ON r.entry_id = e.id
              WHERE e.excel_file_id = ? AND r.status = 'approved'
-             ORDER BY r.approved_at DESC`,
+             ORDER BY e.row_number ASC`,
             [fileId]
         );
         return rows.map(row => ({

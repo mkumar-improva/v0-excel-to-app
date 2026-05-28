@@ -12,7 +12,7 @@ function calculateCost(totalTokens: number): number {
 
 export async function POST(req: Request) {
     try {
-        const { prompt, useSearch = true } = await req.json()
+        const { prompt, useSearch = true, promptTemplate } = await req.json()
 
         const apiKey = process.env.GOOGLE_API_KEY
         if (!apiKey) {
@@ -34,6 +34,7 @@ export async function POST(req: Request) {
                     },
                     body: JSON.stringify({
                         prompt,
+                        promptTemplate,
                         maxResults: 10,
                         maxCharsPerResult: 10000
                     })

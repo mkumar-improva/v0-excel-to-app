@@ -9,9 +9,12 @@ import { ProjectViewer } from "@/components/project-viewer"
 import { ProjectDashboard } from "@/components/project-dashboard"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ChevronLeft, Upload, FileText, Loader2, RefreshCw, BarChart3, Table, Settings } from "lucide-react"
+import { ChevronLeft, Upload, FileText, Loader2, RefreshCw, BarChart3, Table, Settings, FileSpreadsheet } from "lucide-react"
 import Link from "next/link"
 import { ProjectSettingsDialog } from "@/components/project-settings-dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Checkbox } from "@/components/ui/checkbox"
+import { ScrollArea } from "@/components/ui/scroll-area"
 
 export default function ProjectPage() {
     const params = useParams()
@@ -23,6 +26,13 @@ export default function ProjectPage() {
     const [refreshTrigger, setRefreshTrigger] = useState(0)
     const [uploading, setUploading] = useState(false)
     const [activeView, setActiveView] = useState<'dashboard' | 'data'>('data')
+    
+    // Multi-sheet upload states
+    const [sheetSelectorOpen, setSheetSelectorOpen] = useState(false)
+    const [availableSheets, setAvailableSheets] = useState<string[]>([])
+    const [selectedSheets, setSelectedSheets] = useState<Set<string>>(new Set())
+    const [pendingFile, setPendingFile] = useState<File | null>(null)
+    const [pendingWorkbook, setPendingWorkbook] = useState<any>(null)
 
 
     useEffect(() => {
@@ -66,14 +76,85 @@ export default function ProjectPage() {
 
         try {
             setUploading(true)
-            const result = await api.projects.uploadFile(projectId, file)
-            setRefreshTrigger(prev => prev + 1)
-            setSelectedFileId(result.file.id)
+            
+            // Read and parse Excel file in browser using sheetjs
+            const reader = new FileReader()
+            reader.onload = async (event) => {
+                try {
+                    const data = event.target?.result
+                    const XLSX = await import('xlsx')
+                    const workbook = XLSX.read(data, { type: 'array' })
+                    const sheetNames = workbook.SheetNames
+
+                    if (sheetNames.length <= 1) {
+                        // Normal single-sheet upload flow
+                        const result = await api.projects.uploadFile(projectId, file)
+                        setRefreshTrigger(prev => prev + 1)
+                        setSelectedFileId(result.file.id)
+                        setUploading(false)
+                    } else {
+                        // Open sheet selector dialog for multi-sheet file
+                        setPendingFile(file)
+                        setPendingWorkbook(workbook)
+                        setAvailableSheets(sheetNames)
+                        setSelectedSheets(new Set(sheetNames)) // Select all by default
+                        setSheetSelectorOpen(true)
+                        setUploading(false)
+                    }
+                } catch (err) {
+                    console.error("Failed to read Excel file:", err)
+                    alert("Failed to read Excel file structure")
+                    setUploading(false)
+                }
+            }
+            reader.readAsArrayBuffer(file)
         } catch (err) {
             console.error(err)
             alert("Upload failed")
+            setUploading(false)
+        }
+    }
+
+    const handleImportSelectedSheets = async () => {
+        if (!pendingFile || !pendingWorkbook || selectedSheets.size === 0) return
+
+        try {
+            setUploading(true)
+            const XLSX = await import('xlsx')
+            let lastFileId = 0
+
+            for (const sheetName of Array.from(selectedSheets)) {
+                // Create a single-sheet workbook
+                const newWorkbook = XLSX.utils.book_new()
+                XLSX.utils.book_append_sheet(newWorkbook, pendingWorkbook.Sheets[sheetName], sheetName)
+                
+                // Write to array buffer
+                const wbout = XLSX.write(newWorkbook, { bookType: 'xlsx', type: 'array' })
+                
+                // Construct clean filename
+                const cleanName = pendingFile.name.replace(/\.[^/.]+$/, "")
+                const sheetFile = new File(
+                    [wbout], 
+                    `${cleanName} - ${sheetName}.xlsx`, 
+                    { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
+                )
+
+                const result = await api.projects.uploadFile(projectId, sheetFile)
+                lastFileId = result.file.id
+            }
+
+            setRefreshTrigger(prev => prev + 1)
+            if (lastFileId) {
+                setSelectedFileId(lastFileId)
+            }
+            setSheetSelectorOpen(false)
+        } catch (err) {
+            console.error("Error importing sheets:", err)
+            alert("Failed to import some sheets")
         } finally {
             setUploading(false)
+            setPendingFile(null)
+            setPendingWorkbook(null)
         }
     }
 
@@ -221,6 +302,94 @@ export default function ProjectPage() {
                     </>
                 )}
             </div>
+            <Dialog open={sheetSelectorOpen} onOpenChange={setSheetSelectorOpen}>
+                <DialogContent className="sm:max-w-[500px]">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <FileSpreadsheet className="h-5 w-5 text-primary" />
+                            Select Sheets to Import
+                        </DialogTitle>
+                        <DialogDescription>
+                            This Excel file contains multiple sheets. Please choose which sheets you want to import.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-4 py-4">
+                        <div className="flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">
+                                {selectedSheets.size} of {availableSheets.length} selected
+                            </span>
+                            <div className="flex gap-2">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 text-xs"
+                                    onClick={() => setSelectedSheets(new Set(availableSheets))}
+                                >
+                                    Select All
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 text-xs"
+                                    onClick={() => setSelectedSheets(new Set())}
+                                >
+                                    Deselect All
+                                </Button>
+                            </div>
+                        </div>
+
+                        <ScrollArea className="h-[200px] border rounded-md p-3 bg-muted/10">
+                            <div className="space-y-2">
+                                {availableSheets.map(sheetName => {
+                                    const isSelected = selectedSheets.has(sheetName)
+                                    return (
+                                        <div
+                                            key={sheetName}
+                                            className="flex items-center gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors cursor-pointer"
+                                            onClick={() => {
+                                                const next = new Set(selectedSheets)
+                                                if (next.has(sheetName)) {
+                                                    next.delete(sheetName)
+                                                } else {
+                                                    next.add(sheetName)
+                                                }
+                                                setSelectedSheets(next)
+                                            }}
+                                        >
+                                            <Checkbox
+                                                checked={isSelected}
+                                                onCheckedChange={() => {}} // handled by click handler above
+                                            />
+                                            <span className="text-sm font-medium text-foreground truncate">{sheetName}</span>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        </ScrollArea>
+                    </div>
+
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setSheetSelectorOpen(false)} disabled={uploading}>
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={handleImportSelectedSheets}
+                            disabled={selectedSheets.size === 0 || uploading}
+                            className="gap-2"
+                        >
+                            {uploading ? (
+                                <>
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    Importing...
+                                </>
+                            ) : (
+                                <>Import Selected</>
+                            )}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     )
 }
