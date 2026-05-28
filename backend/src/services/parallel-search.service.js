@@ -6,6 +6,91 @@
 
 const PARALLEL_API_URL = 'https://api.parallel.ai/v1beta/search';
 const PARALLEL_BETA_VERSION = 'search-extract-2025-10-10';
+const DEFAULT_PROMPT_TEMPLATE = `You are an expert Data Verification Auditor validating US business contact information (healthcare & commercial) using public web sources.
+Source Trust Order (High→Low):
+Official Website > Google Business Profile > Google Maps > BBB > Yelp/Directories > NPI Registry > Gov/SoS Registry
+⚠️ Gov/SoS data reflects registration time only — treat as historical. Never override official site or Google Business with it.
+Input Data:
+Name: {{Name}}
+Facility Type: {{Facility Type}}
+Address: {{Address}}
+City: {{City}}
+State: {{State}}
+Zip: {{Zip}}
+Telephone: {{Telephone}}
+Fax: {{Fax}}
+INSTRUCTIONS:
+1. Search & Discovery
+- Find Official Website first (highest confidence anchor).
+- Fallback: Google Business Profile (near-authoritative for address/phone) and Google Maps.
+- Supplement: BBB, Yelp, Healthgrades, Zocdoc, YellowPages, LinkedIn.
+- NPI/Gov registries = supporting reference only.
+- Search key: Business Name + Full Address.
+2. Matching Rules (STRICT)
+- MATCH: Name matches AND Address matches (normalized) AND (Telephone OR Fax matches).
+- NOT MATCH: Not found, address mismatch, or unresolved contact conflict.
+- Moved: Official site/Google shows different current address.
+- Address normalize: St=Street, Rd=Road, Ave=Avenue, Blvd=Boulevard. Ignore suite format differences.
+- Phone normalize: strip dashes, spaces, parentheses, country codes.
+3. Validation Logic
+- Name: Standardize. For chains/franchises, match specific branch — not corporate HQ.
+- Address: Use current address from official site or Google Business. If relocated → status = "Moved". Match city/state from input only.
+- Telephone: Match primary number from top-trust source. Note discrepancies.
+- Fax: Verify via official site or directories. If unverified but plausible (healthcare) → keep original, note "Unverified". If business clearly doesn't use fax → null.
+- Gov conflicts: Flag as "Government registry may contain outdated registration data." Do not downgrade confidence if higher-trust sources confirm.
+4. Constraints
+- Never guess. No assumptions without source evidence.
+- confidence_score = 0.0 if no valid source found.
+- Every validated field must trace to a specific URL.
+5. Sources
+- Collect 8–10 distinct source URLs where possible.
+6. Conflict Resolution Priority
+1. Official Website
+2. Google Business Profile and Google Maps
+3. BBB
+4. Yelp / Healthgrades / Directories
+5. NPI Registry
+6. SoS / Gov Registry (flag if stale)
+Output Requirements:
+Return ONLY a valid JSON object.
+No markdown formatting (no \`\`\`json blocks).
+No introductory text or explanations outside the JSON.
+Strictly follow this schema:
+{
+  "original_input": {
+    "name": "String",
+    "facility_type": "String",
+    "address": "String",
+    "city": "String",
+    "state": "String",
+    "zip": "String",
+    "telephone": "String",
+    "fax": "String"
+  },
+  "validated_data": {
+    "name": "String",
+    "facility_type": "String (Must be exactly identical to original_input's facility_type value. Do not validate or change this.)",
+    "address": "String",
+    "city": "String",
+    "state": "String",
+    "zip": "String",
+    "telephone": "String",
+    "fax": "String"
+  },
+  "status": "String (MATCH | NOT MATCH | Moved | Unverified)",
+  "changes_detected": Boolean,
+  "confidence_score": Number (0.0 to 1.0),
+  "confidence_score_explanation": "String (dynamic, detailed explanation of how this specific confidence score was calculated and why it was assigned this value based on the verified and conflicting details)",
+  "data_quality_notes": "String (brief explanation of match reasoning, source conflicts, and any stale government data flagged)",
+  "comment": "String (explain exactly what changed between original_input and validated_data and why. If nothing changed, state that input details matched perfectly.)",
+  "source_references": [
+    {
+      "source_name": "String (e.g., Official Website, Google Business Profile, BBB)",
+      "url": "String (exact link)",
+      "reference_confidence": Number (0.0 to 1.0)
+    }
+  ]
+}`
 
 /**
  * Execute a search using Parallel AI Search API
@@ -105,6 +190,20 @@ function formatResultsForLLM(searchResults) {
 }
 
 /**
+ * Extract the raw multiline Input Data block from the user prompt
+ * @param {string} prompt - The full user prompt containing "Input Data:"
+ * @returns {string|null} The exact multiline input block, or null if not found
+ */
+function extractInputBlockFromPrompt(prompt) {
+    const inputDataBlockRegex = /Input Data:([\s\S]*?)(?:Instructions:|Output Requirements:|INSTRUCTIONS:|\n\n\n)/i;
+    const match = prompt.match(inputDataBlockRegex);
+    if (match && match[1]) {
+        return match[1].trim();
+    }
+    return null;
+}
+
+/**
  * Generate search queries from a user prompt
  * This is a simple implementation - can be enhanced with LLM-based query generation
  * @param {string} prompt - User's original prompt
@@ -148,16 +247,30 @@ function generateSearchQueries(prompt) {
  * @returns {Promise<Object>} Object containing formatted results and raw data
  */
 async function enhancedSearch(userPrompt, options = {}) {
-    const searchQueries = options.queries || generateSearchQueries(userPrompt);
+    let searchQueries = options.queries;
+    
+    if (!searchQueries || searchQueries.length === 0) {
+        const inputBlock = extractInputBlockFromPrompt(userPrompt);
+        if (inputBlock) {
+            searchQueries = [inputBlock];
+        } else {
+            searchQueries = generateSearchQueries(userPrompt);
+        }
+    }
+
+    // console.log('🔍 Generated Search Queries:', searchQueries);
+    // console.log('🔍 Generated Search Queries:', options.promptTemplate);
+
 
     const searchResults = await executeSearch({
-        objective: userPrompt,
+        objective: options.promptTemplate || DEFAULT_PROMPT_TEMPLATE,
         searchQueries,
         maxResults: options.maxResults || 10,
         maxCharsPerResult: options.maxCharsPerResult || 10000
     });
 
     const formattedText = formatResultsForLLM(searchResults);
+
 
     return {
         formattedText,

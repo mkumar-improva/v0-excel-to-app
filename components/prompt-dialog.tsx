@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { ChevronLeft, ChevronRight } from "lucide-react"
+import { ChevronLeft, ChevronRight, Globe, ExternalLink } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
@@ -18,6 +18,7 @@ interface PromptDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   prompt: string
+  promptTemplate?: string
   rowData: Record<string, unknown> | null
   initialTab?: "prompt" | "response"
   matchFields?: string[]
@@ -31,6 +32,7 @@ export function PromptDialog({
   open, 
   onOpenChange, 
   prompt, 
+  promptTemplate,
   rowData, 
   initialTab = "prompt", 
   matchFields,
@@ -213,7 +215,7 @@ export function PromptDialog({
       const response = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: activePrompt }),
+        body: JSON.stringify({ prompt: activePrompt, promptTemplate }),
       })
 
       if (!response.ok) {
@@ -233,6 +235,15 @@ export function PromptDialog({
           fullResponse += chunk
           setAiResponse((prev) => prev + chunk)
         }
+      }
+
+      // Extract search results context if present
+      let searchContextText = ""
+      const searchMarker = "__SEARCH_CONTEXT__:"
+      if (fullResponse.includes(searchMarker)) {
+        const parts = fullResponse.split(searchMarker)
+        fullResponse = parts[0].trim()
+        searchContextText = parts[1]?.trim() || ""
       }
 
       // Extract token usage from the response if present
@@ -255,13 +266,28 @@ export function PromptDialog({
 
         // Update the response to remove the token marker
         fullResponse = actualResponse
-        setAiResponse(actualResponse)
       } else {
         console.warn('⚠️  Frontend: No token usage marker found in response')
       }
 
+      setAiResponse(fullResponse)
+
+      // Inject search results into JSON response before saving it to database
+      let finalSavedResponse = fullResponse
+      if (searchContextText) {
+        try {
+          const jsonMatch = fullResponse.match(/\{[\s\S]*\}/)
+          const jsonString = jsonMatch ? jsonMatch[0] : fullResponse
+          const parsed = JSON.parse(jsonString)
+          parsed.raw_search_results = searchContextText
+          finalSavedResponse = JSON.stringify(parsed, null, 2)
+        } catch (e) {
+          console.error("Failed to inject search results into response JSON:", e)
+        }
+      }
+
       // Save to backend after complete
-      await saveResponse(fullResponse, activePrompt, tokenUsage)
+      await saveResponse(finalSavedResponse, activePrompt, tokenUsage)
 
     } catch (error) {
       console.error("Error generating AI response:", error)
@@ -384,13 +410,16 @@ export function PromptDialog({
           className="flex-1 flex flex-col overflow-hidden"
         >
           <div className="px-6 shrink-0">
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="prompt" disabled={isLoading}>
                 Prompt
               </TabsTrigger>
               <TabsTrigger value="response" disabled={isLoading}>
                 AI Response
                 {isLoading && <span className="ml-2 w-2 h-2 rounded-full bg-primary animate-pulse" />}
+              </TabsTrigger>
+              <TabsTrigger value="sources" disabled={isLoading}>
+                Search Results
               </TabsTrigger>
             </TabsList>
           </div>
@@ -475,6 +504,28 @@ export function PromptDialog({
             ) : (
               <div className="flex-1 flex items-center justify-center text-muted-foreground">
                 No response yet. Send a prompt to AI.
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="sources" className="flex-1 mt-0 px-6 pb-6 overflow-hidden flex flex-col h-full">
+            {parsedData?.raw_search_results ? (
+              <ScrollArea className="flex-1 w-full rounded-md border border-border p-4 bg-muted/30 font-mono text-xs whitespace-pre-wrap leading-relaxed select-text">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 border-b pb-2 mb-2 font-sans">
+                    <Globe className="h-5 w-5 text-primary" />
+                    <h3 className="text-base font-semibold text-foreground">Raw Web Search Results</h3>
+                  </div>
+                  <div className="text-foreground break-words select-text">
+                    {parsedData.raw_search_results}
+                  </div>
+                </div>
+              </ScrollArea>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground p-6">
+                <Globe className="h-12 w-12 mb-4 opacity-20" />
+                <p className="font-medium text-foreground">No raw search results available yet.</p>
+                <p className="text-xs mt-1 text-muted-foreground">Please run the AI generation to retrieve the raw search results context.</p>
               </div>
             )}
           </TabsContent>

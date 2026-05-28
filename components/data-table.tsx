@@ -328,6 +328,7 @@ export function DataTable({ columns, rows, promptTemplate, onDataChange, matchFi
           }
         }}
         prompt={selectedRow ? generatePromptFromTemplate(selectedRow) : ""}
+        promptTemplate={promptTemplate}
         rowData={selectedRow}
         initialTab={initialDialogTab}
         matchFields={matchFields}
