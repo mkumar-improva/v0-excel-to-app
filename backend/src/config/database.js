@@ -4,9 +4,14 @@ const sqlite3 = require('sqlite3').verbose();
 
 const dbPath = process.env.DB_PATH || path.join(__dirname, '../../data/app.sqlite');
 
+  console.log("DB_PATH ENV =", process.env.DB_PATH);
+  console.log("Resolved DB =", require('path').resolve(process.env.DB_PATH));
+
 let db = null;
 
 function getDb() {
+  console.log("DB_PATH ENV =", process.env.DB_PATH);
+  console.log("Resolved DB =", require('path').resolve(process.env.DB_PATH));
   if (db) return db;
 
   // Ensure data directory exists

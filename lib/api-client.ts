@@ -1,6 +1,6 @@
 import { Project, ExcelFileDB, Entry, AIResponse } from "./types"
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"
+const API_BASE = `${process.env.NEXT_PUBLIC_API_URL}/api` || "http://localhost:5000/api"
 
 async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
     const res = await fetch(`${API_BASE}${endpoint}`, {
