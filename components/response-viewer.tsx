@@ -75,6 +75,13 @@ export function ResponseViewer({ data, rawJson, onApprove, onReject, onReiterate
 
     const confidencePercent = data.confidence_score ? Math.round(data.confidence_score * 100) : 0
 
+    let matchPercent: number | null = null
+    if (typeof data.match_score === 'number') {
+        matchPercent = data.match_score <= 1.0 ? Math.round(data.match_score * 100) : Math.round(data.match_score)
+    } else if (typeof matchPercentage === 'number') {
+        matchPercent = matchPercentage
+    }
+
     // Prepare comparison rows
     const allKeys = new Set([
         ...Object.keys(data.original_input || {}),
@@ -139,16 +146,16 @@ export function ResponseViewer({ data, rawJson, onApprove, onReject, onReiterate
                         </div>
                     </div>
 
-                    {typeof matchPercentage === 'number' && (
+                    {matchPercent !== null && (
                         <div className="flex items-center gap-2 border-l pl-6">
                             <span className="text-muted-foreground">Data Match:</span>
                             <span className={cn(
                                 "font-bold",
-                                matchPercentage === 100 ? "text-green-600 dark:text-green-400" :
-                                    matchPercentage >= 80 ? "text-yellow-600 dark:text-yellow-400" :
+                                matchPercent === 100 ? "text-green-600 dark:text-green-400" :
+                                    matchPercent >= 80 ? "text-yellow-600 dark:text-yellow-400" :
                                         "text-red-600 dark:text-red-400"
                             )}>
-                                {matchPercentage}%
+                                {matchPercent}%
                             </span>
                         </div>
                     )}

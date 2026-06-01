@@ -287,9 +287,10 @@ export function ProjectDashboard({ projectId, projectName }: ProjectDashboardPro
                                     outerRadius={80}
                                     fill="#8884d8"
                                     dataKey="value"
+                                    style={{ outline: 'none' }}
                                 >
                                     {analytics.statusDistribution.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={entry.color} />
+                                        <Cell key={`cell-${index}`} fill={entry.color} style={{ outline: 'none' }} />
                                     ))}
                                 </Pie>
                                 <Tooltip />

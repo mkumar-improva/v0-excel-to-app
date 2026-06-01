@@ -130,7 +130,7 @@ export async function POST(req: Request) {
                 4. If government registry data (e.g. NPI, state SOS) conflicts with recent web data, flag the government data as potentially stale/outdated.
                 5. Provide a precise confidence_score and a dynamic confidence_score_explanation detailing why this specific score was assigned.
                 6. Return ONLY the requested JSON format conforming strictly to the validation schema. Do not output markdown, explanations, or commentary outside the JSON.
-                7. Normalize the address (e.g. "Main St" -> "Main Street", "Road" -> "Rd", "Ave" -> "Avenue" etc.) Don't change address line if it is correct.              
+                7. Normalize the address (e.g. ""St" -> "Street" ,"Main St" -> "Main Street", "Road" -> "Rd", "Ave" -> "Avenue" etc.) Don't change address line if it is correct.              
                 STRICT VALIDATION JSON SCHEMA:
                 {
                 "original_input": {
@@ -153,11 +153,12 @@ export async function POST(req: Request) {
                 "telephone": "string",
                 "fax": "string"
                 },
-                "status": "MATCH | NOT MATCH | Moved | Unverified",
+                 "status": "MATCH | NOT MATCH | Moved | Unverified",
                 "changes_detected": boolean,
                 "confidence_score": number (0.0 to 1.0),
                 "confidence_score_explanation": "string (detailed explanation of the confidence score calculation)",
                 "data_quality_notes": "string (match reasoning, conflicts, stale data flags)",
+                "match_score": number (0.0 to 1.0, representing how closely the validated_data matches the original_input. Evaluate name, address, city, state, zip, telephone, and fax. If they are identical (ignoring casing and minor punctuation/spacing differences), the score is 1.0. If there are minor variations, standardizations or formatting fixes, it should be between 0.7 and 0.9. If there are major discrepancies or updates like moving address, it should be lower.),
                 "comment": "string (explanation of changes or match details)",
                 "source_references": [
                 {
