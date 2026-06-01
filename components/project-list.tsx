@@ -46,14 +46,22 @@ export function ProjectList({ projects, onDelete }: ProjectListProps) {
                                 <Trash2 className="h-4 w-4" />
                             </Button>
                         </div>
-                        <CardDescription className="line-clamp-2 h-10">
+                        <CardDescription className="line-clamp-3 min-h-[60px] overflow-hidden text-ellipsis">
                             {project.description || "No description"}
                         </CardDescription>
                     </CardHeader>
-                    <CardContent className="flex-1">
-                        <div className="flex items-center text-sm text-muted-foreground">
+                    <CardContent className="flex-1 flex flex-col justify-end pt-0">
+                        <div className="flex items-center text-sm text-muted-foreground mt-2">
                             <Calendar className="mr-2 h-4 w-4" />
-                            <span>Created {formatDistanceToNow(new Date(project.created_at))} ago</span>
+                            <span>Created {(() => {
+                                let dateStr = project.created_at;
+                                if (dateStr.includes(' ') && !dateStr.includes('T')) {
+                                    dateStr = dateStr.replace(' ', 'T');
+                                }
+                                const hasTimezone = dateStr.endsWith('Z') || /[-+]\d{2}:?\d{2}$/.test(dateStr);
+                                const parsedDate = hasTimezone ? new Date(dateStr) : new Date(dateStr + 'Z');
+                                return formatDistanceToNow(parsedDate);
+                            })()} ago</span>
                         </div>
                     </CardContent>
                     <CardFooter className="pt-2">

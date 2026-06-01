@@ -216,7 +216,7 @@ export function ProjectViewer({
                     "Model": resp.model,
                     "Tokens": resp.total_tokens,
                     "Cost": resp.estimated_cost ? `$${resp.estimated_cost.toFixed(4)}` : "$0.0000",
-                    "Approved At": resp.approved_at ? new Date(resp.approved_at).toLocaleString() : "",
+                    "Approved At": resp.approved_at ? new Date(resp.approved_at).toLocaleString('en-US') : "",
                     "Confidence Score": confidenceScoreVal,
                     _entryId: resp.entry_id,
                     _responseCount: 1,

@@ -2,9 +2,13 @@ const { run, get, all } = require('../config/database');
 
 class FileModel {
     static async create(projectId, fileName, filePath, columns) {
+        // Generate current UTC timestamp in standard ISO-8601 format (e.g. 'YYYY-MM-DDTHH:MM:SS.sssZ')
+        const now = new Date();
+        const isoString = now.toISOString();
+
         const result = await run(
-            'INSERT INTO excel_files (project_id, file_name, file_path, columns) VALUES (?, ?, ?, ?)',
-            [projectId, fileName, filePath, JSON.stringify(columns)]
+            'INSERT INTO excel_files (project_id, file_name, file_path, columns, uploaded_at) VALUES (?, ?, ?, ?, ?)',
+            [projectId, fileName, filePath, JSON.stringify(columns), isoString]
         );
         return this.findById(result.lastID);
     }

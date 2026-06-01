@@ -130,7 +130,7 @@ export async function POST(req: Request) {
                 4. If government registry data (e.g. NPI, state SOS) conflicts with recent web data, flag the government data as potentially stale/outdated.
                 5. Provide a precise confidence_score and a dynamic confidence_score_explanation detailing why this specific score was assigned.
                 6. Return ONLY the requested JSON format conforming strictly to the validation schema. Do not output markdown, explanations, or commentary outside the JSON.
-
+                7. Normalize the address (e.g. "Main St" -> "Main Street", "Road" -> "Rd", "Ave" -> "Avenue" etc.) Don't change address line if it is correct.              
                 STRICT VALIDATION JSON SCHEMA:
                 {
                 "original_input": {

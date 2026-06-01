@@ -327,8 +327,20 @@ export function DataTable({ columns, rows, promptTemplate, onDataChange, matchFi
             onDataChange?.()
           }
         }}
-        prompt={selectedRow ? generatePromptFromTemplate(selectedRow) : ""}
-        promptTemplate={promptTemplate}
+        prompt={selectedRow ? (generatePromptFromTemplate(selectedRow) || `Please validate and verify the business contact information.
+        Name: ${selectedRow.Name || selectedRow.name || ""}
+        Address: ${selectedRow.Address || selectedRow.address || ""}
+        City: ${selectedRow.City || selectedRow.city || ""}
+        State: ${selectedRow.State || selectedRow.state || ""}
+        Zip: ${selectedRow.Zip || selectedRow.zip || ""}
+        Telephone: ${selectedRow.Telephone || selectedRow.telephone || ""}`) : ""}
+        promptTemplate={promptTemplate || `Please validate and verify the business contact information.
+        Name: {{Name}}
+        Address: {{Address}}
+        City: {{City}}
+        State: {{State}}
+        Zip: {{Zip}}
+        Telephone: {{Telephone}}`}
         rowData={selectedRow}
         initialTab={initialDialogTab}
         matchFields={matchFields}

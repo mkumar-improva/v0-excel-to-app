@@ -239,11 +239,28 @@ export function ProjectDashboard({ projectId, projectName }: ProjectDashboardPro
                     </CardHeader>
                     <CardContent>
                         <ResponsiveContainer width="100%" height={300}>
-                            <BarChart data={analytics.dailyActivity}>
+            <BarChart data={analytics.dailyActivity}>
                                 <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="date" />
+                                <XAxis 
+                                    dataKey="date" 
+                                    tickFormatter={(date) => {
+                                        try {
+                                            return format(parseISO(date), 'MM/dd/yyyy')
+                                        } catch (e) {
+                                            return date
+                                        }
+                                    }}
+                                />
                                 <YAxis />
-                                <Tooltip />
+                                <Tooltip 
+                                    labelFormatter={(date) => {
+                                        try {
+                                            return format(parseISO(date as string), 'MM/dd/yyyy')
+                                        } catch (e) {
+                                            return String(date)
+                                        }
+                                    }}
+                                />
                                 <Legend />
                                 <Bar dataKey="generated" fill={COLORS.primary} name="Generated" />
                                 <Bar dataKey="approved" fill={COLORS.approved} name="Approved" />

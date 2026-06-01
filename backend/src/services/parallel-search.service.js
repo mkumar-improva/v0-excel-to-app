@@ -123,9 +123,26 @@ const TASK_OUTPUT_SCHEMA = {
                 },
                 required: ['name', 'facility_type', 'address', 'city', 'state', 'zip', 'telephone', 'fax'],
                 additionalProperties: false
+            },
+            evidence: {
+                type: 'array',
+                items: {
+                    type: 'object',
+                    properties: {
+                        url:                 { type: 'string' },
+                        business_name_found: { type: 'string' },
+                        address_found:       { type: 'string' },
+                        phone_found:         { type: 'string' },
+                        fax_found:           { type: 'string' },
+                        confidence:          { type: 'number' },
+                        supporting_excerpt:  { type: 'string' }
+                    },
+                    required: ['url', 'business_name_found', 'address_found', 'phone_found', 'confidence', 'supporting_excerpt'],
+                    additionalProperties: false
+                }
             }
         },
-        required: ['business_input'],
+        required: ['business_input', 'evidence'],
         additionalProperties: false
     }
 };
@@ -302,14 +319,14 @@ async function enhancedSearch(userPrompt) {
             'x-api-key':    apiKey
         },
         body: JSON.stringify({
-            input:     taskInput,       // ← ONLY buildPrompt output
+            input:     taskInput,       
             processor: 'base-fast',
             task_spec: {
                 output_schema: TASK_OUTPUT_SCHEMA
             }
         })
     });
-    console.log("Task run created", taskInput);
+    // console.log("Task run created", taskInput);
 
 
     if (!createResponse.ok) {
@@ -371,17 +388,25 @@ async function enhancedSearch(userPrompt) {
                 domain,
                 url,
                 is_official_website: isOff,
-                business_name_found: businessInput.name      ?? '',
-                address_found:       buildAddress(businessInput),
-                phone_found:         businessInput.telephone ?? '',
-                fax_found:           businessInput.fax       ?? '',
+                business_name_found: '',
+                address_found:       '',
+                phone_found:         '',
+                fax_found:           '',
                 confidence:          0.6,
                 supporting_excerpt:  ''
             });
         }
 
         const item = urlMap.get(url);
-        Object.assign(item, overrides);
+        for (const [key, value] of Object.entries(overrides)) {
+            if (
+                value !== undefined &&
+                value !== null &&
+                value !== ''
+            ) {
+                item[key] = value;
+            }
+        }
         // Always re-derive is_official_website from source_type
         item.is_official_website = item.source_type === 'Official Website';
     }
@@ -400,12 +425,12 @@ async function enhancedSearch(userPrompt) {
                 domain,
                 url,
                 is_official_website: srcType === 'Official Website',
-                business_name_found: ev.business_name_found || businessInput.name      || '',
-                address_found:       ev.address_found       || buildAddress(businessInput),
-                phone_found:         ev.phone_found         || businessInput.telephone || '',
-                fax_found:           ev.fax_found           || businessInput.fax       || '',
+                business_name_found: ev.business_name_found || '',
+                address_found:       ev.address_found || '',
+                phone_found:         ev.phone_found || '',
+                fax_found:           ev.fax_found || '',
                 confidence:          typeof ev.confidence === 'number' ? ev.confidence : 0.6,
-                supporting_excerpt:  ev.supporting_excerpt  || ''
+                supporting_excerpt:  ev.supporting_excerpt || ''
             });
         }
     }
