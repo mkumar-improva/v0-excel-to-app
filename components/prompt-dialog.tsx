@@ -237,40 +237,42 @@ export function PromptDialog({
         }
       }
 
-      // Extract search results context if present
+      // Extract markers robustly using index slices
       let searchContextText = ""
-      const searchMarker = "__SEARCH_CONTEXT__:"
-      if (fullResponse.includes(searchMarker)) {
-        const parts = fullResponse.split(searchMarker)
-        fullResponse = parts[0].trim()
-        searchContextText = parts[1]?.trim() || ""
+      const searchMarkerIndex = fullResponse.indexOf("__SEARCH_CONTEXT__:")
+      const tokenMarkerIndex = fullResponse.indexOf("__TOKEN_USAGE__:")
+
+      if (searchMarkerIndex !== -1) {
+        const endSearchIndex = tokenMarkerIndex !== -1 && tokenMarkerIndex > searchMarkerIndex
+          ? tokenMarkerIndex
+          : fullResponse.length
+        searchContextText = fullResponse.substring(searchMarkerIndex + 19, endSearchIndex).trim()
       }
 
-      // Extract token usage from the response if present
-      const tokenMarker = "__TOKEN_USAGE__:"
-      if (fullResponse.includes(tokenMarker)) {
-        const parts = fullResponse.split(tokenMarker)
-        const actualResponse = parts[0].trim()
-        const tokenDataStr = parts[1]?.trim()
-
+      if (tokenMarkerIndex !== -1) {
+        const endTokenIndex = searchMarkerIndex !== -1 && searchMarkerIndex > tokenMarkerIndex
+          ? searchMarkerIndex
+          : fullResponse.length
+        const tokenDataStr = fullResponse.substring(tokenMarkerIndex + 16, endTokenIndex).trim()
         if (tokenDataStr) {
           try {
-            const extractedTokenUsage = JSON.parse(tokenDataStr)
-            tokenUsage = extractedTokenUsage
+            tokenUsage = JSON.parse(tokenDataStr)
             setTokenUsage(tokenUsage)
             console.log('✅ Frontend: Token usage extracted from stream:', tokenUsage)
           } catch (e) {
             console.error('Failed to parse token usage:', e)
           }
         }
-
-        // Update the response to remove the token marker
-        fullResponse = actualResponse
-      } else {
-        console.warn('⚠️  Frontend: No token usage marker found in response')
       }
 
-      setAiResponse(fullResponse)
+      // Clean the response from all appended stream markers
+      const firstMarkerIndex = [searchMarkerIndex, tokenMarkerIndex]
+        .filter(idx => idx !== -1)
+        .sort((a, b) => a - b)[0]
+
+      if (firstMarkerIndex !== undefined) {
+        fullResponse = fullResponse.substring(0, firstMarkerIndex).trim()
+      }
 
       // Inject search results into JSON response before saving it to database
       let finalSavedResponse = fullResponse
@@ -285,6 +287,8 @@ export function PromptDialog({
           console.error("Failed to inject search results into response JSON:", e)
         }
       }
+
+      setAiResponse(finalSavedResponse)
 
       // Save to backend after complete
       await saveResponse(finalSavedResponse, activePrompt, tokenUsage)
@@ -510,7 +514,7 @@ export function PromptDialog({
 
           <TabsContent value="sources" className="flex-1 mt-0 px-6 pb-6 overflow-hidden flex flex-col h-full">
             {parsedData?.raw_search_results ? (
-              <ScrollArea className="flex-1 w-full rounded-md border border-border p-4 bg-muted/30 font-mono text-xs whitespace-pre-wrap leading-relaxed select-text">
+              <div className="flex-1 w-full rounded-md border border-border p-4 bg-muted/30 font-mono text-xs whitespace-pre-wrap leading-relaxed select-text overflow-y-auto">
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 border-b pb-2 mb-2 font-sans">
                     <Globe className="h-5 w-5 text-primary" />
@@ -520,7 +524,7 @@ export function PromptDialog({
                     {parsedData.raw_search_results}
                   </div>
                 </div>
-              </ScrollArea>
+              </div>
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground p-6">
                 <Globe className="h-12 w-12 mb-4 opacity-20" />

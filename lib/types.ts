@@ -94,5 +94,6 @@ export interface ResponseData {
   confidence_score?: number
   confidence_score_explanation?: string
   data_quality_notes?: string
+  match_score?: number
   source_references?: SourceReference[]
 }

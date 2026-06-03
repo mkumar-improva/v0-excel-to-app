@@ -6,6 +6,7 @@ import { ExcelFileDB } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { FileSpreadsheet, Menu, Trash2, Plus, Upload, ChevronLeft, ChevronRight } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 
@@ -40,18 +41,29 @@ export function FileList({ projectId, selectedFileId, onFileSelect, refreshTrigg
 
 
 
-    const handleDelete = async (e: React.MouseEvent, id: number) => {
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+    const [fileToDelete, setFileToDelete] = useState<{ id: number; name: string } | null>(null)
+
+    const handleDeleteClick = (e: React.MouseEvent, id: number, name: string) => {
         e.stopPropagation()
-        if (!confirm("Delete this file?")) return
+        setFileToDelete({ id, name })
+        setDeleteDialogOpen(true)
+    }
+
+    const confirmDelete = async () => {
+        if (!fileToDelete) return
 
         try {
-            await api.files.delete(id)
+            await api.files.delete(fileToDelete.id)
             await loadFiles()
-            if (selectedFileId === id) {
+            if (selectedFileId === fileToDelete.id) {
                 onFileSelect(0) // Deselect
             }
         } catch (err) {
             console.error(err)
+        } finally {
+            setDeleteDialogOpen(false)
+            setFileToDelete(null)
         }
     }
 
@@ -82,7 +94,17 @@ export function FileList({ projectId, selectedFileId, onFileSelect, refreshTrigg
                                     <div className="min-w-0 flex-1">
                                         <p className="text-sm font-medium truncate" title={file.file_name}>{file.file_name}</p>
                                         <p className={`text-xs truncate ${selectedFileId === file.id ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
-                                            {formatDistanceToNow(new Date(file.uploaded_at))} ago
+                                            {(() => {
+                                                let dateStr = file.uploaded_at;
+                                                // Replace space with 'T' to make it a strictly compliant ISO string if not already
+                                                if (dateStr.includes(' ') && !dateStr.includes('T')) {
+                                                    dateStr = dateStr.replace(' ', 'T');
+                                                }
+                                                // Check for timezone indicator specifically at the end of the string
+                                                const hasTimezone = dateStr.endsWith('Z') || /[-+]\d{2}:?\d{2}$/.test(dateStr);
+                                                const parsedDate = hasTimezone ? new Date(dateStr) : new Date(dateStr + 'Z');
+                                                return formatDistanceToNow(parsedDate);
+                                            })()} ago
                                         </p>
                                     </div>
                                 </div>
@@ -96,7 +118,7 @@ export function FileList({ projectId, selectedFileId, onFileSelect, refreshTrigg
                                             : "text-muted-foreground hover:text-red-500 hover:bg-destructive/10"
                                         }
                   `}
-                                    onClick={(e) => handleDelete(e, file.id)}
+                                    onClick={(e) => handleDeleteClick(e, file.id, file.file_name)}
                                 >
                                     <Trash2 className="h-4 w-4" />
                                 </Button>
@@ -162,6 +184,25 @@ export function FileList({ projectId, selectedFileId, onFileSelect, refreshTrigg
                     </SheetContent>
                 </Sheet>
             </div>
+
+            <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+                <DialogContent className="sm:max-w-[425px]">
+                    <DialogHeader>
+                        <DialogTitle>Delete File</DialogTitle>
+                        <DialogDescription>
+                            Are you sure you want to delete <span className="font-semibold text-foreground">"{fileToDelete?.name}"</span>? This action cannot be undone and will delete all associated entries and generated AI responses.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter className="gap-2 ">
+                        <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+                            Cancel
+                        </Button>
+                        <Button variant="destructive" onClick={confirmDelete}>
+                            Delete File
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </>
     )
 }

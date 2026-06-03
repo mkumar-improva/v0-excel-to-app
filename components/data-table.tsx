@@ -7,6 +7,7 @@ import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { PromptDialog } from "./prompt-dialog"
 import { ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 interface DataTableProps {
   columns: string[]
@@ -184,7 +185,7 @@ export function DataTable({ columns, rows, promptTemplate, onDataChange, matchFi
   }
 
   return (
-    <>
+    <TooltipProvider>
       <div className="flex flex-col h-full">
         {/* Table Info Bar */}
         <div className="px-4 py-3 border-b border-border bg-muted/30">
@@ -233,10 +234,10 @@ export function DataTable({ columns, rows, promptTemplate, onDataChange, matchFi
                     <TableHead className={`w-[100px] ${showMultiSelect ? '' : 'sticky left-0 z-30'} bg-muted/50 border-r`}>Actions</TableHead>
                     {columns.map((column) => (
                       <TableHead
-                        key={column}
-                        className="min-w-[150px] bg-muted/50 cursor-pointer hover:bg-muted transition-colors select-none"
-                        onClick={(e) => handleSort(column, e.shiftKey)}
-                        title="Click to sort, Shift+Click for multi-column sort"
+                          key={column}
+                          className="min-w-[150px] bg-muted/50 cursor-pointer hover:bg-muted transition-colors select-none"
+                          onClick={(e) => handleSort(column, e.shiftKey)}
+                          title="Click to sort, Shift+Click for multi-column sort"
                       >
                         <div className="flex items-center gap-2">
                           <span>{column}</span>
@@ -302,11 +303,26 @@ export function DataTable({ columns, rows, promptTemplate, onDataChange, matchFi
                             )}
                           </Button>
                         </TableCell>
-                        {columns.map((column) => (
-                          <TableCell key={column} className="max-w-[300px] min-w-[150px] truncate">
-                            {String(row[column] ?? "")}
-                          </TableCell>
-                        ))}
+                        {columns.map((column) => {
+                          const value = String(row[column] ?? "")
+                          const isNameOrComment = column.toLowerCase() === "name" || column.toLowerCase() === "comment" || column.toLowerCase() === "cmment"
+                          return (
+                            <TableCell key={column} className="max-w-[300px] min-w-[150px] truncate">
+                              {isNameOrComment && value ? (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="cursor-help block truncate w-full">{value}</span>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="max-w-[400px] break-words">
+                                    <p>{value}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              ) : (
+                                value
+                              )}
+                            </TableCell>
+                          )
+                        })}
                       </TableRow>
                     )
                   })}
@@ -327,8 +343,20 @@ export function DataTable({ columns, rows, promptTemplate, onDataChange, matchFi
             onDataChange?.()
           }
         }}
-        prompt={selectedRow ? generatePromptFromTemplate(selectedRow) : ""}
-        promptTemplate={promptTemplate}
+        prompt={selectedRow ? (generatePromptFromTemplate(selectedRow) || `Please validate and verify the business contact information.
+        Name: ${selectedRow.Name || selectedRow.name || ""}
+        Address: ${selectedRow.Address || selectedRow.address || ""}
+        City: ${selectedRow.City || selectedRow.city || ""}
+        State: ${selectedRow.State || selectedRow.state || ""}
+        Zip: ${selectedRow.Zip || selectedRow.zip || ""}
+        Telephone: ${selectedRow.Telephone || selectedRow.telephone || ""}`) : ""}
+        promptTemplate={promptTemplate || `Please validate and verify the business contact information.
+        Name: {{Name}}
+        Address: {{Address}}
+        City: {{City}}
+        State: {{State}}
+        Zip: {{Zip}}
+        Telephone: {{Telephone}}`}
         rowData={selectedRow}
         initialTab={initialDialogTab}
         matchFields={matchFields}
@@ -337,6 +365,6 @@ export function DataTable({ columns, rows, promptTemplate, onDataChange, matchFi
         hasNext={hasNext}
         hasPrev={hasPrev}
       />
-    </>
+    </TooltipProvider>
   )
 }

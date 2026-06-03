@@ -2,9 +2,12 @@ const { run, get, all } = require('../config/database');
 
 class ProjectModel {
     static async create(name, description = null, promptTemplate = null) {
+        const now = new Date();
+        const isoString = now.toISOString();
+
         const result = await run(
-            'INSERT INTO projects (name, description, prompt_template) VALUES (?, ?, ?)',
-            [name, description, promptTemplate]
+            'INSERT INTO projects (name, description, prompt_template, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+            [name, description, promptTemplate, isoString, isoString]
         );
         return this.findById(result.lastID);
     }

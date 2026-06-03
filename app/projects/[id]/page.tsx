@@ -325,6 +325,7 @@ export default function ProjectPage() {
                                     size="sm"
                                     className="h-8 text-xs"
                                     onClick={() => setSelectedSheets(new Set(availableSheets))}
+                                    disabled={uploading}
                                 >
                                     Select All
                                 </Button>
@@ -333,6 +334,7 @@ export default function ProjectPage() {
                                     size="sm"
                                     className="h-8 text-xs"
                                     onClick={() => setSelectedSheets(new Set())}
+                                    disabled={uploading}
                                 >
                                     Deselect All
                                 </Button>

@@ -216,7 +216,7 @@ export function ProjectViewer({
                     "Model": resp.model,
                     "Tokens": resp.total_tokens,
                     "Cost": resp.estimated_cost ? `$${resp.estimated_cost.toFixed(4)}` : "$0.0000",
-                    "Approved At": resp.approved_at ? new Date(resp.approved_at).toLocaleString() : "",
+                    "Approved At": resp.approved_at ? new Date(resp.approved_at).toLocaleString('en-US') : "",
                     "Confidence Score": confidenceScoreVal,
                     _entryId: resp.entry_id,
                     _responseCount: 1,
@@ -353,18 +353,54 @@ export function ProjectViewer({
                         if (done) break
                         const chunk = decoder.decode(value)
                         fullText += chunk
+                    }
+                }
 
-                        // Check for token usage marker
-                        const tokenMarkerIndex = fullText.indexOf("__TOKEN_USAGE__:")
-                        if (tokenMarkerIndex !== -1) {
-                            const tokenDataStr = fullText.substring(tokenMarkerIndex + 16)
-                            try {
-                                tokenUsage = JSON.parse(tokenDataStr.trim())
-                                fullText = fullText.substring(0, tokenMarkerIndex).trim()
-                            } catch (e) {
-                                console.error("Failed to parse token usage", e)
-                            }
+                // Extract markers robustly using index slices
+                let searchContextText = ""
+                const searchMarkerIndex = fullText.indexOf("__SEARCH_CONTEXT__:")
+                const tokenMarkerIndex = fullText.indexOf("__TOKEN_USAGE__:")
+
+                if (searchMarkerIndex !== -1) {
+                    const endSearchIndex = tokenMarkerIndex !== -1 && tokenMarkerIndex > searchMarkerIndex
+                        ? tokenMarkerIndex
+                        : fullText.length
+                    searchContextText = fullText.substring(searchMarkerIndex + 19, endSearchIndex).trim()
+                }
+
+                if (tokenMarkerIndex !== -1) {
+                    const endTokenIndex = searchMarkerIndex !== -1 && searchMarkerIndex > tokenMarkerIndex
+                        ? searchMarkerIndex
+                        : fullText.length
+                    const tokenDataStr = fullText.substring(tokenMarkerIndex + 16, endTokenIndex).trim()
+                    if (tokenDataStr) {
+                        try {
+                            tokenUsage = JSON.parse(tokenDataStr)
+                        } catch (e) {
+                            console.error("Failed to parse token usage", e)
                         }
+                    }
+                }
+
+                // Clean the response from all appended stream markers
+                const firstMarkerIndex = [searchMarkerIndex, tokenMarkerIndex]
+                    .filter(idx => idx !== -1)
+                    .sort((a, b) => a - b)[0]
+
+                if (firstMarkerIndex !== undefined) {
+                    fullText = fullText.substring(0, firstMarkerIndex).trim()
+                }
+
+                // Inject search results into JSON response before saving it to database
+                if (searchContextText) {
+                    try {
+                        const jsonMatch = fullText.match(/\{[\s\S]*\}/)
+                        const jsonString = jsonMatch ? jsonMatch[0] : fullText
+                        const parsed = JSON.parse(jsonString)
+                        parsed.raw_search_results = searchContextText
+                        fullText = JSON.stringify(parsed, null, 2)
+                    } catch (e) {
+                        console.error("Failed to inject search results into response JSON:", e)
                     }
                 }
 

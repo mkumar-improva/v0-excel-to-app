@@ -54,7 +54,7 @@ router.post('/search',
                 prompt,
                 queries: searchResult.queries,
                 formattedText: searchResult.formattedText,
-                resultsCount: searchResult.rawResults?.results?.length || 0,
+                resultsCount: searchResult.rawResults?.result?.evidence?.length || searchResult.rawResults?.results?.length || 0,
                 searchId: searchResult.rawResults?.search_id,
                 rawResults: searchResult.rawResults
             });
