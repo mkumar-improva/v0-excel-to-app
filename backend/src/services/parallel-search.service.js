@@ -84,7 +84,7 @@ OUTPUT: Return ONLY valid JSON matching this exact schema. No markdown. No expla
     }
   ]
 }
-MINIMUM evidence array length: 8 items. If fewer than 8 distinct sources exist, include every source found.`;
+MINIMUM evidence array length: 8 items. If fewer than 8 distinct sources exist, include every source found maximum 10 items.`;
 
 // Domains that are NEVER the official business website.
 const NON_OFFICIAL_DOMAINS = [
