@@ -17,6 +17,8 @@ function getDb() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         description TEXT,
+        prompt_template TEXT,
+        theme TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
       );
@@ -46,6 +48,12 @@ function getDb() {
         prompt TEXT NOT NULL,
         response TEXT NOT NULL,
         model TEXT,
+        input_tokens INTEGER,
+        output_tokens INTEGER,
+        total_tokens INTEGER,
+        estimated_cost REAL,
+        status TEXT DEFAULT 'pending',
+        approved_at TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (entry_id) REFERENCES entries(id) ON DELETE CASCADE
@@ -55,7 +63,31 @@ function getDb() {
       CREATE INDEX IF NOT EXISTS idx_excel_files_project_id ON excel_files(project_id);
       CREATE INDEX IF NOT EXISTS idx_entries_excel_file_id ON entries(excel_file_id);
       CREATE INDEX IF NOT EXISTS idx_ai_responses_entry_id ON ai_responses(entry_id);
+      CREATE INDEX IF NOT EXISTS idx_ai_responses_status ON ai_responses(status);
     `)
+
+    // Run migrations dynamically for existing databases
+    try {
+      db.exec('ALTER TABLE projects ADD COLUMN prompt_template TEXT')
+    } catch (_) {}
+    try {
+      db.exec('ALTER TABLE projects ADD COLUMN theme TEXT')
+    } catch (_) {}
+
+    const columnsToAdd = [
+      'ALTER TABLE ai_responses ADD COLUMN status TEXT DEFAULT "pending"',
+      'ALTER TABLE ai_responses ADD COLUMN approved_at TEXT',
+      'ALTER TABLE ai_responses ADD COLUMN model TEXT',
+      'ALTER TABLE ai_responses ADD COLUMN input_tokens INTEGER',
+      'ALTER TABLE ai_responses ADD COLUMN output_tokens INTEGER',
+      'ALTER TABLE ai_responses ADD COLUMN total_tokens INTEGER',
+      'ALTER TABLE ai_responses ADD COLUMN estimated_cost REAL'
+    ];
+    for (const sql of columnsToAdd) {
+      try {
+        db.exec(sql)
+      } catch (_) {}
+    }
 
     // Enable foreign keys
     db.pragma("foreign_keys = ON")
@@ -69,6 +101,8 @@ export interface Project {
   id: number
   name: string
   description?: string
+  prompt_template?: string
+  theme?: string
   created_at: string
   updated_at: string
 }
@@ -262,8 +296,15 @@ export interface AIResponse {
   prompt: string
   response: string
   model?: string
+  input_tokens?: number
+  output_tokens?: number
+  total_tokens?: number
+  estimated_cost?: number
+  status?: 'pending' | 'approved' | 'rejected'
+  approved_at?: string
   created_at: string
   updated_at: string
+  entry_data?: Record<string, unknown>
 }
 
 export function createAIResponse(
@@ -296,6 +337,22 @@ export function listAIResponsesByEntry(entryId: number): AIResponse[] {
     "SELECT * FROM ai_responses WHERE entry_id = ? ORDER BY created_at DESC"
   )
   return stmt.all(entryId) as AIResponse[]
+}
+
+export function listApprovedResponsesByFileId(fileId: number): AIResponse[] {
+  const database = getDb()
+  const stmt = database.prepare(
+    `SELECT r.*, e.row_number, e.data as entry_data
+     FROM ai_responses r
+     JOIN entries e ON r.entry_id = e.id
+     WHERE e.excel_file_id = ? AND r.status = 'approved'
+     ORDER BY e.row_number ASC`
+  )
+  const rows = stmt.all(fileId) as any[]
+  return rows.map((row) => ({
+    ...row,
+    entry_data: JSON.parse(row.entry_data),
+  })) as AIResponse[]
 }
 
 export function updateAIResponse(

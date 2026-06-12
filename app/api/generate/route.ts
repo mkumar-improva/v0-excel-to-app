@@ -234,7 +234,16 @@ export async function POST(req: Request) {
 
                     const cost = calculateCost(inputTokens, outputTokens)
 
-                    console.log("📊 Final extracted token data:", { inputTokens, outputTokens, totalTokens, cost })
+                    console.log(`
+==================================================
+📊 GEMINI GENERATION COMPLETE
+--------------------------------------------------
+🔑 Input Tokens:  ${inputTokens}
+📝 Output Tokens: ${outputTokens}
+🔢 Total Tokens:  ${totalTokens}
+💵 Est. Cost:     $${cost.toFixed(6)}
+==================================================
+`)
 
                     // Append a special marker with token data at the end
                     const tokenData = `\n\n__TOKEN_USAGE__:${JSON.stringify({
