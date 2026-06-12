@@ -421,3 +421,187 @@ export function listEntriesWithResponses(excelFileId: number): EntryWithResponse
     ai_responses: listAIResponsesByEntry(entry.id),
   }))
 }
+
+// ===== ANALYTICS OPERATIONS =====
+
+export interface ProjectAnalytics {
+  totalResponses: number
+  approvedResponses: number
+  pendingResponses: number
+  rejectedResponses: number
+  totalTokens: number
+  totalCost: number
+  avgTokensPerResponse: number
+  avgCostPerResponse: number
+  totalEntries: number
+  entriesWithResponses: number
+  entriesApproved: number
+  timeSeriesData: Array<{ date: string; responses: number; tokens: number; cost: number }>
+  statusDistribution: Array<{ name: string; value: number; color: string }>
+  dailyActivity: Array<{ date: string; generated: number; approved: number }>
+}
+
+export function getProjectAnalytics(projectId: number, timeRange: string = '7d'): ProjectAnalytics {
+  const database = getDb()
+  
+  // Calculate date threshold based on time range
+  let dateThreshold: Date
+  const now = new Date()
+
+  switch (timeRange) {
+    case '7d':
+      dateThreshold = new Date(now.setDate(now.getDate() - 7))
+      break
+    case '30d':
+      dateThreshold = new Date(now.setDate(now.getDate() - 30))
+      break
+    case 'all':
+      dateThreshold = new Date('2000-01-01')
+      break
+    default:
+      dateThreshold = new Date(now.setDate(now.getDate() - 7))
+  }
+
+  const dateThresholdStr = dateThreshold.toISOString()
+
+  // 1. Get total metrics
+  const totalMetricsQuery = `
+    SELECT 
+      COUNT(*) as total_responses,
+      SUM(CASE WHEN ar.status = 'approved' THEN 1 ELSE 0 END) as approved_responses,
+      SUM(CASE WHEN ar.status = 'pending' THEN 1 ELSE 0 END) as pending_responses,
+      SUM(CASE WHEN ar.status = 'rejected' THEN 1 ELSE 0 END) as rejected_responses,
+      COALESCE(SUM(ar.total_tokens), 0) as total_tokens,
+      COALESCE(SUM(ar.estimated_cost), 0) as total_cost
+    FROM ai_responses ar
+    WHERE ar.entry_id IN (
+      SELECT e.id FROM entries e
+      WHERE e.excel_file_id IN (
+        SELECT ef.id FROM excel_files ef
+        WHERE ef.project_id = ?
+      )
+    )
+    AND ar.created_at >= ?
+  `
+  const totalMetrics = database.prepare(totalMetricsQuery).get(projectId, dateThresholdStr) as any
+
+  // 2. Get entry metrics
+  const entryMetricsQuery = `
+    SELECT 
+      COUNT(DISTINCT e.id) as total_entries,
+      COUNT(DISTINCT CASE WHEN ar.id IS NOT NULL THEN e.id END) as entries_with_responses,
+      COUNT(DISTINCT CASE WHEN ar.status = 'approved' THEN e.id END) as entries_approved
+    FROM entries e
+    LEFT JOIN ai_responses ar ON e.id = ar.entry_id
+    WHERE e.excel_file_id IN (
+      SELECT ef.id FROM excel_files ef
+      WHERE ef.project_id = ?
+    )
+  `
+  const entryMetrics = database.prepare(entryMetricsQuery).get(projectId) as any
+
+  // 3. Get time series data
+  const timeSeriesQuery = `
+    SELECT 
+      DATE(ar.created_at) as date,
+      COUNT(*) as responses,
+      COALESCE(SUM(ar.total_tokens), 0) as tokens,
+      COALESCE(SUM(ar.estimated_cost), 0) as cost
+    FROM ai_responses ar
+    WHERE ar.entry_id IN (
+      SELECT e.id FROM entries e
+      WHERE e.excel_file_id IN (
+        SELECT ef.id FROM excel_files ef
+        WHERE ef.project_id = ?
+      )
+    )
+    AND ar.created_at >= ?
+    GROUP BY DATE(ar.created_at)
+    ORDER BY date ASC
+  `
+  const timeSeriesRows = database.prepare(timeSeriesQuery).all(projectId, dateThresholdStr) as any[]
+  const timeSeriesData = timeSeriesRows.map(row => ({
+    date: row.date,
+    responses: row.responses,
+    tokens: row.tokens,
+    cost: parseFloat((row.cost || 0).toFixed(2))
+  }))
+
+  // 4. Get status distribution
+  const statusQuery = `
+    SELECT 
+      ar.status,
+      COUNT(*) as count
+    FROM ai_responses ar
+    WHERE ar.entry_id IN (
+      SELECT e.id FROM entries e
+      WHERE e.excel_file_id IN (
+        SELECT ef.id FROM excel_files ef
+        WHERE ef.project_id = ?
+      )
+    )
+    AND ar.created_at >= ?
+    GROUP BY ar.status
+  `
+  const colorMap: Record<string, string> = {
+    'approved': 'oklch(0.62 0.16 145)',      // Success green
+    'pending': 'oklch(0.70 0.16 55)',        // Warning amber
+    'rejected': 'oklch(0.577 0.245 27.325)'  // Destructive red
+  }
+  const statusRows = database.prepare(statusQuery).all(projectId, dateThresholdStr) as any[]
+  const statusDistribution = statusRows.map(row => ({
+    name: row.status.charAt(0).toUpperCase() + row.status.slice(1),
+    value: row.count,
+    color: colorMap[row.status] || 'oklch(0.551 0.027 264.364)'
+  }))
+
+  // 5. Get daily activity
+  const dailyQuery = `
+    SELECT 
+      DATE(ar.created_at) as date,
+      COUNT(*) as generated,
+      SUM(CASE WHEN ar.status = 'approved' THEN 1 ELSE 0 END) as approved
+    FROM ai_responses ar
+    WHERE ar.entry_id IN (
+      SELECT e.id FROM entries e
+      WHERE e.excel_file_id IN (
+        SELECT ef.id FROM excel_files ef
+        WHERE ef.project_id = ?
+      )
+    )
+    AND ar.created_at >= ?
+    GROUP BY DATE(ar.created_at)
+    ORDER BY date DESC
+    LIMIT 7
+  `
+  const dailyRows = database.prepare(dailyQuery).all(projectId, dateThresholdStr) as any[]
+  const dailyActivity = dailyRows.reverse().map(row => ({
+    date: row.date,
+    generated: row.generated,
+    approved: row.approved
+  }))
+
+  // Calculate averages
+  const tr = totalMetrics?.total_responses || 0
+  const tt = totalMetrics?.total_tokens || 0
+  const tc = totalMetrics?.total_cost || 0
+  const avgTokensPerResponse = tr > 0 ? tt / tr : 0
+  const avgCostPerResponse = tr > 0 ? tc / tr : 0
+
+  return {
+    totalResponses: tr,
+    approvedResponses: totalMetrics?.approved_responses || 0,
+    pendingResponses: totalMetrics?.pending_responses || 0,
+    rejectedResponses: totalMetrics?.rejected_responses || 0,
+    totalTokens: tt,
+    totalCost: tc,
+    avgTokensPerResponse: Math.round(avgTokensPerResponse),
+    avgCostPerResponse: parseFloat(avgCostPerResponse.toFixed(3)),
+    totalEntries: entryMetrics?.total_entries || 0,
+    entriesWithResponses: entryMetrics?.entries_with_responses || 0,
+    entriesApproved: entryMetrics?.entries_approved || 0,
+    timeSeriesData,
+    statusDistribution,
+    dailyActivity
+  }
+}
