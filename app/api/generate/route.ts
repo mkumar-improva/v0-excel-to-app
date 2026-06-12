@@ -43,7 +43,7 @@ export async function POST(req: Request) {
         if (useSearch) {
             try {
                 // Call the backend search API
-                const backendUrl = process.env.BACKEND_URL || 'http://localhost:5000'
+                const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
                 const searchResponse = await fetch(`${backendUrl}/api/search`, {
                     method: 'POST',
                     headers: {

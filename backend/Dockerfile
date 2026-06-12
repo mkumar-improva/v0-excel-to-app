@@ -1,6 +1,5 @@
 FROM node:18-alpine
 
-RUN mkdir -p /app
 WORKDIR /app
 
 COPY package*.json ./
@@ -9,6 +8,8 @@ RUN npm install
 
 COPY . .
 
-EXPOSE 5000
+EXPOSE 80
 
-CMD ["npm", "run", "dev"]
+ENV PORT=80
+
+CMD ["npm", "start"]
