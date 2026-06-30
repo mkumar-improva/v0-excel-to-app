@@ -1,16 +1,14 @@
 "use client"
-
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { ExternalLink, CheckCircle2, AlertTriangle, ArrowRight, Activity, Globe, Monitor, HelpCircle } from "lucide-react"
+import { ExternalLink, CheckCircle2, AlertTriangle, ArrowRight, ArrowLeft, Activity, Globe, Monitor, HelpCircle, Undo2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ResponseData } from "@/lib/types"
 import { isSimilarValue } from "@/lib/data-comparison"
 import { ApprovalWorkspace } from "./approval-workspace"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { ThumbsUp, RefreshCw, XCircle } from "lucide-react"
+import { ThumbsUp, RefreshCw } from "lucide-react"
 
 interface ResponseViewerProps {
     data: ResponseData
@@ -30,6 +28,7 @@ interface ResponseViewerProps {
 
 export function ResponseViewer({ data, rawJson, onApprove, onReject, onReiterate, status = 'pending', tokenUsage, matchPercentage }: ResponseViewerProps) {
     const [showApprovalWorkspace, setShowApprovalWorkspace] = useState(false)
+    const [revertedFields, setRevertedFields] = useState<Set<string>>(new Set())
 
     // If data doesn't look structured enough (missing key fields), fallback to raw JSON
     const isStructured = data.validated_data || data.data_quality_notes || data.source_references
@@ -208,30 +207,65 @@ export function ResponseViewer({ data, rawJson, onApprove, onReject, onReiterate
                                     <div className="col-span-4 sm:col-span-4">Validated Data</div>
                                 </div>
                                 <div className="divide-y">
-                                    {comparisonRows.map(({ key, original, validated, hasChanged }) => (
-                                        <div key={key} className={cn(
-                                            "grid grid-cols-12 p-3 text-sm items-center transition-colors",
-                                            hasChanged
-                                                ? "bg-warning/20 hover:bg-warning/30"
-                                                : "bg-success/20 hover:bg-success/30"
-                                        )}>
-                                            <div className="col-span-3 sm:col-span-3 font-medium text-muted-foreground truncate" title={key}>
-                                                {key}
+                                    {comparisonRows.map(({ key, original, validated, hasChanged }) => {
+                                        const isReverted = revertedFields.has(key)
+                                        const displayValue = isReverted ? original : validated
+
+                                        return (
+                                            <div key={key} className={cn(
+                                                "grid grid-cols-12 p-3 text-sm items-center transition-colors",
+                                                hasChanged
+                                                    ? (isReverted ? "bg-blue-50/50 dark:bg-blue-900/10 hover:bg-blue-50 dark:hover:bg-blue-900/20" : "bg-warning/20 hover:bg-warning/30")
+                                                    : "bg-success/20 hover:bg-success/30"
+                                            )}>
+                                                <div className="col-span-3 sm:col-span-3 font-medium text-muted-foreground truncate" title={key}>
+                                                    {key}
+                                                </div>
+                                                <div className="col-span-4 sm:col-span-4 truncate text-muted-foreground" title={String(original ?? "")}>
+                                                    {original ?? <span className="italic text-xs opacity-50">Empty</span>}
+                                                </div>
+                                                <div className="col-span-1 sm:col-span-1 flex justify-center">
+                                                    {hasChanged && (
+                                                        <button
+                                                           disabled={status === 'approved'}
+                                                            onClick={() => {
+                                                                setRevertedFields(prev => {
+                                                                    const next = new Set(prev)
+                                                                    if (next.has(key)) {
+                                                                        next.delete(key)
+                                                                    } else {
+                                                                        next.add(key)
+                                                                    }
+                                                                    return next
+                                                                })
+                                                            }}
+                                                            className={cn(
+                                                                "p-1 rounded-md transition-colors cursor-pointer",
+                                                                isReverted
+                                                                    ? "text-blue-500 hover:bg-blue-100 dark:hover:bg-blue-900/30"
+                                                                    : "text-muted-foreground/50 hover:text-warning hover:bg-warning/10"
+                                                            )}
+                                                            title={isReverted ? "Click to use verified data" : "Click to revert to original"}
+                                                        >
+                                                            {isReverted ? (
+                                                                <ArrowLeft className="h-4 w-4" />
+                                                            ) : (
+                                                                <ArrowRight className="h-4 w-4" />
+                                                            )}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                <div className={cn(
+                                                    "col-span-4 sm:col-span-4 font-medium truncate",
+                                                    hasChanged
+                                                        ? (isReverted ? "text-blue-600 dark:text-blue-400" : "text-warning")
+                                                        : "text-foreground"
+                                                )} title={String(displayValue ?? "")}>
+                                                    {displayValue ?? <span className="italic text-xs opacity-50">Empty</span>}
+                                                </div>
                                             </div>
-                                            <div className="col-span-4 sm:col-span-4 truncate text-muted-foreground" title={String(original ?? "")}>
-                                                {original ?? <span className="italic text-xs opacity-50">Empty</span>}
-                                            </div>
-                                            <div className="col-span-1 sm:col-span-1 flex justify-center text-muted-foreground/30">
-                                                {hasChanged && <ArrowRight className="h-4 w-4" />}
-                                            </div>
-                                            <div className={cn(
-                                                "col-span-4 sm:col-span-4 font-medium truncate",
-                                                hasChanged ? "text-warning" : "text-foreground"
-                                            )} title={String(validated ?? "")}>
-                                                {validated ?? <span className="italic text-xs opacity-50">Empty</span>}
-                                            </div>
-                                        </div>
-                                    ))}
+                                        )
+                                    })}
                                 </div>
                             </div>
                         </section>
@@ -289,8 +323,8 @@ export function ResponseViewer({ data, rawJson, onApprove, onReject, onReiterate
                             onClick={() => onReject?.()}
                             className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                         >
-                            <XCircle className="mr-2 h-4 w-4" />
-                            Reject
+                            <Undo2 className="mr-2 h-4 w-4" />
+                            Revert to Queue
                         </Button>
                         <div className="flex items-center text-success font-medium px-4 py-2 bg-success/10 rounded-md border border-success/20">
                             <CheckCircle2 className="mr-2 h-5 w-5" />
@@ -317,11 +351,27 @@ export function ResponseViewer({ data, rawJson, onApprove, onReject, onReiterate
                         </Button>
 
                         <Button
-                            onClick={() => onApprove?.()}
+                            onClick={() => {
+                                if (revertedFields.size > 0) {
+                                    // Build modified data with reverted fields
+                                    const editedData = { ...data }
+                                    if (editedData.validated_data) {
+                                        editedData.validated_data = { ...editedData.validated_data }
+                                        revertedFields.forEach(key => {
+                                            if (data.original_input?.[key] !== undefined) {
+                                                editedData.validated_data![key] = data.original_input[key]
+                                            }
+                                        })
+                                    }
+                                    onApprove?.(editedData)
+                                } else {
+                                    onApprove?.()
+                                }
+                            }}
                             className="bg-success hover:bg-success/90 text-success-foreground shadow-sm hover:shadow transition-all"
                         >
                             <ThumbsUp className="mr-2 h-4 w-4" />
-                            Approve
+                            Approve{revertedFields.size > 0 ? ` (${revertedFields.size} reverted)` : ''}
                         </Button>
                     </>
                 )}

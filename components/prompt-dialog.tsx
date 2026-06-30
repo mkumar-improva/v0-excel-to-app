@@ -12,6 +12,7 @@ import remarkGfm from "remark-gfm"
 import { api } from "@/lib/api-client"
 import { ResponseViewer } from "@/components/response-viewer"
 import { AIResponse } from "@/lib/types"
+import { generateAIResponse } from "@/lib/generate-ai-response"
 import { AILoader, AILoaderCompact } from "@/components/ai-loader"
 
 interface PromptDialogProps {
@@ -152,20 +153,6 @@ export function PromptDialog({
     if (!entryId) return
 
     try {
-      // Check for auto-approval (confidence score 90% or above)
-      let isAutoApprove = false
-      try {
-        const jsonMatch = fullResponse.match(/\{[\s\S]*\}/)
-        const jsonString = jsonMatch ? jsonMatch[0] : fullResponse
-        const parsed = JSON.parse(jsonString)
-        const confidence = Number(parsed.confidence_score)
-        if (!isNaN(confidence) && (confidence >= 90 || (confidence >= 0.9 && confidence <= 1.0))) {
-          isAutoApprove = true
-        }
-      } catch (e) {
-        // Not JSON or missing confidence_score, skip auto-approve
-      }
-
       const payload: any = {
         prompt: usedPrompt,
         response: fullResponse,
@@ -174,20 +161,13 @@ export function PromptDialog({
         output_tokens: tokenUsage?.outputTokens,
         total_tokens: tokenUsage?.totalTokens,
         estimated_cost: tokenUsage?.estimatedCost,
-        status: isAutoApprove ? 'approved' : 'pending',
-        approved_at: isAutoApprove ? new Date().toISOString() : null
+        status: 'pending',
+        approved_at: null
       }
-
-      console.log('📤 Frontend: Sending to backend API:', payload)
 
       const resp = await api.entries.createResponse(entryId, payload)
       setLatestResponse(resp)
-
-      if (isAutoApprove) {
-        toast.success("Response auto-approved (90%+ confidence)")
-      } else {
-        toast.success("Response saved to database")
-      }
+      toast.success("Response saved — review in Generated tab")
     } catch (err) {
       console.error("Failed to save response:", err)
       toast.error("Failed to save response to database")
@@ -203,95 +183,19 @@ export function PromptDialog({
     setLatestResponse(null)
     setActiveTab("response")
 
-    let fullResponse = ""
-    let tokenUsage: {
-      inputTokens: number
-      outputTokens: number
-      totalTokens: number
-      estimatedCost: number
-    } | undefined
-
     try {
-      const response = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: activePrompt, promptTemplate }),
-      })
+      const result = await generateAIResponse(
+        activePrompt,
+        promptTemplate ?? '',
+        (chunk) => setAiResponse((prev) => prev + chunk)
+      )
 
-      if (!response.ok) {
-        const errorText = await response.text()
-        toast.error(`Generation failed: ${errorText || response.statusText}`)
-        throw new Error("Failed to generate response")
+      if (result.tokenUsage) {
+        setTokenUsage(result.tokenUsage)
       }
 
-      const reader = response.body?.getReader()
-      const decoder = new TextDecoder()
-
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          const chunk = decoder.decode(value, { stream: true })
-          fullResponse += chunk
-          setAiResponse((prev) => prev + chunk)
-        }
-      }
-
-      // Extract markers robustly using index slices
-      let searchContextText = ""
-      const searchMarkerIndex = fullResponse.indexOf("__SEARCH_CONTEXT__:")
-      const tokenMarkerIndex = fullResponse.indexOf("__TOKEN_USAGE__:")
-
-      if (searchMarkerIndex !== -1) {
-        const endSearchIndex = tokenMarkerIndex !== -1 && tokenMarkerIndex > searchMarkerIndex
-          ? tokenMarkerIndex
-          : fullResponse.length
-        searchContextText = fullResponse.substring(searchMarkerIndex + 19, endSearchIndex).trim()
-      }
-
-      if (tokenMarkerIndex !== -1) {
-        const endTokenIndex = searchMarkerIndex !== -1 && searchMarkerIndex > tokenMarkerIndex
-          ? searchMarkerIndex
-          : fullResponse.length
-        const tokenDataStr = fullResponse.substring(tokenMarkerIndex + 16, endTokenIndex).trim()
-        if (tokenDataStr) {
-          try {
-            tokenUsage = JSON.parse(tokenDataStr)
-            setTokenUsage(tokenUsage)
-            console.log('✅ Frontend: Token usage extracted from stream:', tokenUsage)
-          } catch (e) {
-            console.error('Failed to parse token usage:', e)
-          }
-        }
-      }
-
-      // Clean the response from all appended stream markers
-      const firstMarkerIndex = [searchMarkerIndex, tokenMarkerIndex]
-        .filter(idx => idx !== -1)
-        .sort((a, b) => a - b)[0]
-
-      if (firstMarkerIndex !== undefined) {
-        fullResponse = fullResponse.substring(0, firstMarkerIndex).trim()
-      }
-
-      // Inject search results into JSON response before saving it to database
-      let finalSavedResponse = fullResponse
-      if (searchContextText) {
-        try {
-          const jsonMatch = fullResponse.match(/\{[\s\S]*\}/)
-          const jsonString = jsonMatch ? jsonMatch[0] : fullResponse
-          const parsed = JSON.parse(jsonString)
-          parsed.raw_search_results = searchContextText
-          finalSavedResponse = JSON.stringify(parsed, null, 2)
-        } catch (e) {
-          console.error("Failed to inject search results into response JSON:", e)
-        }
-      }
-
-      setAiResponse(finalSavedResponse)
-
-      // Save to backend after complete
-      await saveResponse(finalSavedResponse, activePrompt, tokenUsage)
+      setAiResponse(result.finalResponse)
+      await saveResponse(result.finalResponse, activePrompt, result.tokenUsage)
 
     } catch (error) {
       console.error("Error generating AI response:", error)
@@ -340,19 +244,14 @@ export function PromptDialog({
     if (!latestResponse) return
     try {
       setIsLoading(true)
-
-      const updatePayload: any = {
-        status: 'rejected',
-        approved_at: null // Clear approval timestamp if it was previously approved
-      }
-
-      const updated = await api.entries.updateResponse(latestResponse.id, updatePayload)
-      setLatestResponse(updated)
-
-      toast.success("Response marked as rejected")
+      await api.entries.deleteResponse(latestResponse.entry_id)
+      setLatestResponse(null)
+      setAiResponse("")
+      onOpenChange(false) // Close dialog after rejection
+      toast.success("Response removed — reverted to In Queue")
     } catch (err) {
       console.error(err)
-      toast.error("Failed to reject response")
+      toast.error("Failed to revert response")
     } finally {
       setIsLoading(false)
     }

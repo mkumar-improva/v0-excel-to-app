@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { PromptDialog } from "./prompt-dialog"
-import { ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react"
+import { ArrowUp, ArrowDown, ArrowUpDown, ArrowLeft, ArrowRight } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
@@ -18,6 +18,10 @@ interface DataTableProps {
   showMultiSelect?: boolean
   selectedRows?: Set<number>
   onSelectionChange?: (selected: Set<number>) => void
+  showFieldToggles?: boolean
+  fieldOverrides?: Record<number, Record<string, 'original' | 'validated'>>
+  onFieldToggle?: (entryId: number, field: string) => void
+  isApproved?: boolean
 }
 
 type SortConfig = {
@@ -25,7 +29,7 @@ type SortConfig = {
   direction: 'asc' | 'desc'
 }
 
-export function DataTable({ columns, rows, promptTemplate, onDataChange, matchFields, showMultiSelect = false, selectedRows = new Set(), onSelectionChange }: DataTableProps) {
+export function DataTable({ columns, rows, promptTemplate, onDataChange, matchFields, showMultiSelect = false, selectedRows = new Set(), onSelectionChange, showFieldToggles = false, fieldOverrides = {}, onFieldToggle, isApproved = false }: DataTableProps) {
   const [selectedRow, setSelectedRow] = useState<Record<string, unknown> | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [initialDialogTab, setInitialDialogTab] = useState<"prompt" | "response">("prompt")
@@ -48,6 +52,7 @@ export function DataTable({ columns, rows, promptTemplate, onDataChange, matchFi
   }
 
   const handleToggleRow = (entryId: number) => {
+    console.log("Toggling row selection for entryId:", entryId)
     if (!onSelectionChange) return
     const newSelected = new Set(selectedRows)
     if (newSelected.has(entryId)) {
@@ -306,20 +311,73 @@ export function DataTable({ columns, rows, promptTemplate, onDataChange, matchFi
                         {columns.map((column) => {
                           const value = String(row[column] ?? "")
                           const isNameOrComment = column.toLowerCase() === "name" || column.toLowerCase() === "comment" || column.toLowerCase() === "cmment"
+
+                          // Field toggle logic for generated tab
+                          const changedFields = (row._changedFields as string[] | undefined) || []
+                          const isChanged = showFieldToggles && changedFields.includes(column)
+                          const override = fieldOverrides[entryId]?.[column]
+                          const isReverted = override === 'original'
+
+                          // Determine the alternate value (the one not currently shown)
+                          const originalVal = isChanged ? String((row._originalValues as any)?.[column] ?? "") : ""
+                          const validatedVal = isChanged ? String((row._validatedValues as any)?.[column] ?? "") : ""
+
                           return (
-                            <TableCell key={column} className="max-w-[300px] min-w-[150px] truncate">
-                              {isNameOrComment && value ? (
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="cursor-help block truncate w-full">{value}</span>
-                                  </TooltipTrigger>
-                                  <TooltipContent className="max-w-[400px] break-words">
-                                    <p>{value}</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              ) : (
-                                value
-                              )}
+                            <TableCell
+                              key={column}
+                              className={`max-w-[300px] min-w-[150px] ${isChanged ? (isReverted ? 'bg-blue-50/50 dark:bg-blue-900/10' : 'bg-warning/10') : ''}`}
+                            >
+                              <div className="flex items-center gap-1">
+                                <div className="flex-1 truncate">
+                                  {isNameOrComment && value ? (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span className="cursor-help block truncate w-full">{value}</span>
+                                      </TooltipTrigger>
+                                      <TooltipContent className="max-w-[400px] break-words">
+                                        <p>{value}</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  ) : (
+                                    <span className={isChanged && !isReverted ? "text-warning font-medium" : ""}>{value}</span>
+                                  )}
+                                </div>
+                                {isChanged && onFieldToggle && (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          if (!isApproved) onFieldToggle(entryId, column)
+                                        }}
+                                        disabled={isApproved}
+                                        className={`shrink-0 p-0.5 rounded transition-colors ${
+                                          isApproved
+                                            ? 'text-muted-foreground/40 cursor-not-allowed'
+                                            : isReverted
+                                              ? 'text-blue-500 hover:text-blue-600 hover:bg-muted'
+                                              : 'text-warning hover:text-warning/80 hover:bg-muted'
+                                        }`}
+                                      >
+                                        {isReverted ? (
+                                          <ArrowLeft className="h-3.5 w-3.5" />
+                                        ) : (
+                                          <ArrowRight className="h-3.5 w-3.5" />
+                                        )}
+                                      </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent className="max-w-[350px]">
+                                      {isApproved ? (
+                                        <p>Already approved</p>
+                                      ) : isReverted ? (
+                                        <p>Using original: <strong>{originalVal}</strong><br/>Click to use verified: <strong>{validatedVal}</strong></p>
+                                      ) : (
+                                        <p>Changed from: <strong>{originalVal}</strong><br/>Click to revert to original</p>
+                                      )}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                )}
+                              </div>
                             </TableCell>
                           )
                         })}

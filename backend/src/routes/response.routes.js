@@ -125,4 +125,46 @@ router.delete('/responses/:id', validateId, checkValidation, async (req, res, ne
     }
 });
 
+// POST /api/bulk-approve-responses - Approve latest responses for multiple entries
+router.post('/bulk-approve-responses', async (req, res, next) => {
+    try {
+        const { entryIds } = req.body;
+        if (!Array.isArray(entryIds) || entryIds.length === 0) {
+            return res.status(400).json({ error: 'entryIds must be a non-empty array' });
+        }
+        const approvedCount = await ResponseModel.approveByEntryIds(entryIds);
+        res.json({ success: true, approvedCount });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// POST /api/bulk-delete-responses - Delete responses for multiple entries at once
+router.post('/bulk-delete-responses', async (req, res, next) => {
+    try {
+        const { entryIds } = req.body;
+        if (!Array.isArray(entryIds) || entryIds.length === 0) {
+            return res.status(400).json({ error: 'entryIds must be a non-empty array' });
+        }
+        const deletedCount = await ResponseModel.deleteByEntryIds(entryIds);
+        res.json({ success: true, deletedCount });
+    } catch (error) {
+        next(error);
+    }
+});
+
+//DELETE /api/delete-response-by-entry/:id - Delete all responses for an entry
+router.delete('/delete-response-by-entry/:id', validateId, checkValidation, async (req, res, next) => {
+    try {
+        const entryId = parseInt(req.params.id);
+        const deleted = await ResponseModel.deleteByEntryId(entryId);
+        if (!deleted) {
+            return res.status(404).json({ error: 'No responses found for this entry' });
+        }
+        res.json({ success: true });
+    } catch (error) {
+        next(error);
+    }
+});
+
 module.exports = router;

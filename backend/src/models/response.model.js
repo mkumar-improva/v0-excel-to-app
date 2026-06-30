@@ -71,6 +71,34 @@ class ResponseModel {
         return result.changes > 0;
     }
 
+    static async deleteByEntryId(entryId) {
+        const result = await run('DELETE FROM ai_responses WHERE entry_id = ?', [entryId]);
+        return result.changes > 0;
+    }
+
+    static async deleteByEntryIds(entryIds) {
+        if (!entryIds || entryIds.length === 0) return 0;
+        const placeholders = entryIds.map(() => '?').join(',');
+        const result = await run(`DELETE FROM ai_responses WHERE entry_id IN (${placeholders})`, entryIds);
+        return result.changes;
+    }
+
+    static async approveByEntryIds(entryIds) {
+        if (!entryIds || entryIds.length === 0) return 0;
+        const placeholders = entryIds.map(() => '?').join(',');
+        const now = new Date().toISOString();
+        const result = await run(
+            `UPDATE ai_responses SET status = 'approved', approved_at = ?, updated_at = CURRENT_TIMESTAMP
+             WHERE id IN (
+                SELECT id FROM ai_responses AS a
+                WHERE a.entry_id IN (${placeholders})
+                AND a.created_at = (SELECT MAX(a2.created_at) FROM ai_responses AS a2 WHERE a2.entry_id = a.entry_id)
+             )`,
+            [now, ...entryIds]
+        );
+        return result.changes;
+    }
+
     static async findApprovedByFileId(fileId) {
         const rows = await all(
             `SELECT r.*, e.row_number, e.data as entry_data

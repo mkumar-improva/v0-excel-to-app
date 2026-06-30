@@ -118,12 +118,29 @@ export const api = {
             })
             return res.response
         },
-        updateResponse: async (id: number, data: { status?: string, approved_at?: string }) => {
+        updateResponse: async (id: number, data: { status?: string, approved_at?: string | null, response?: string }) => {
             const res = await fetchAPI<{ response: AIResponse }>(`/responses/${id}`, {
                 method: "PUT",
                 body: JSON.stringify(data),
             })
             return res.response
+        },
+        deleteResponse: async (id: number) => {
+            return await fetchAPI<{ success: boolean }>(`/delete-response-by-entry/${id}`, {
+                method: "DELETE",
+            })
+        },
+        bulkDeleteResponses: async (entryIds: number[]) => {
+            return await fetchAPI<{ success: boolean; deletedCount: number }>(`/bulk-delete-responses`, {
+                method: "POST",
+                body: JSON.stringify({ entryIds }),
+            })
+        },
+        bulkApproveResponses: async (entryIds: number[]) => {
+            return await fetchAPI<{ success: boolean; approvedCount: number }>(`/bulk-approve-responses`, {
+                method: "POST",
+                body: JSON.stringify({ entryIds }),
+            })
         },
     },
 }

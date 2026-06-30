@@ -61,6 +61,7 @@ export interface Entry {
   last_generated_at?: string
   last_approved_at?: string
   latest_response_text?: string
+  latest_response_id?: number
   approved_response_text?: string
 }
 
