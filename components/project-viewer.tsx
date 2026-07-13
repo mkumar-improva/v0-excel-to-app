@@ -30,6 +30,16 @@ import { toast } from "sonner";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { isSimilarValue } from "@/lib/data-comparison";
 
+// Cost of a response at $2.00 per 1M tokens, rounded to 3 decimals to match
+// the per-row cost shown in the View dialog.
+function tokensToCost(totalTokens: number): number {
+  return Math.round(((totalTokens || 0) / 1_000_000) * 2.0 * 1000) / 1000;
+}
+
+// Parallel Task API (base-fast) is billed per request: $10 / 1,000 = $0.01 per
+// provider generation. Change this if your base-fast dashboard rate differs.
+const PARALLEL_COST_PER_REQUEST = 0.01;
+
 interface ProjectViewerProps {
   fileId: number;
   project: Project;
@@ -62,6 +72,7 @@ export function ProjectViewer({
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
   const [approvedResponses, setApprovedResponses] = useState<any[]>([]);
+  const [generatedCost, setGeneratedCost] = useState(0);
   const [fieldOverrides, setFieldOverrides] = useState<
     Record<number, Record<string, "original" | "validated">>
   >({});
@@ -278,6 +289,31 @@ export function ProjectViewer({
       });
 
       setApprovedResponses(processedApproved);
+
+      // Sum token usage of the latest response for each generated (pending) entry,
+      // using the same per-entry responses endpoint the View dialog reads from.
+      const generatedEntries = processedRows.filter(
+        (r) => (r._responseCount || 0) > 0 && (r._approvedCount || 0) === 0,
+      );
+      const responseLists = await Promise.all(
+        generatedEntries.map((r) =>
+          api.entries.listResponses(r._entryId as number).catch(() => []),
+        ),
+      );
+      let genCost = 0;
+      responseLists.forEach((resps) => {
+        if (resps && resps.length > 0) {
+          const latest = [...resps].sort(
+            (a, b) =>
+              new Date(b.created_at).getTime() -
+              new Date(a.created_at).getTime(),
+          )[0];
+          // Round each provider's cost to 3 decimals (same as the View dialog)
+          // before summing, so the total matches the per-row costs shown there.
+          genCost += tokensToCost(latest.total_tokens || 0);
+        }
+      });
+      setGeneratedCost(genCost);
     } catch (err) {
       console.error(err);
     } finally {
@@ -489,6 +525,27 @@ export function ProjectViewer({
     getCI,
     normalize,
   ]);
+
+  // Cost breakdown for the active tab: AI (token) cost + Parallel search cost.
+  const costBreakdown = useMemo(() => {
+    let aiCost = 0;
+    let count = 0;
+    if (activeTab === "generated") {
+      aiCost = generatedCost;
+      count = rows.filter(
+        (r) => (r._responseCount || 0) > 0 && (r._approvedCount || 0) === 0,
+      ).length;
+    } else if (activeTab === "approved") {
+      aiCost = approvedResponses.reduce(
+        (sum, row) => sum + tokensToCost(row.total_tokens || 0),
+        0,
+      );
+      count = approvedResponses.length;
+    }
+    // One Parallel Task run per provider.
+    const searchCost = count * PARALLEL_COST_PER_REQUEST;
+    return { aiCost, searchCost, total: aiCost + searchCost };
+  }, [activeTab, generatedCost, approvedResponses, rows]);
 
   const displayColumns = useMemo(() => {
     if (activeTab === "approved") {
@@ -789,6 +846,40 @@ export function ProjectViewer({
               <FileSpreadsheet className="h-4 w-4" />
               Export to Excel
             </Button>
+          )}
+          {(activeTab === "generated" || activeTab === "approved") && (
+            <div className="relative group">
+              <button
+                type="button"
+                className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-sm hover:bg-muted transition-colors cursor-default"
+              >
+                <span className="text-muted-foreground">Total Cost:</span>
+                <span className="font-semibold tabular-nums text-primary">
+                  ${costBreakdown.total.toFixed(3)}
+                </span>
+              </button>
+              <div className="absolute right-0 top-full mt-2 z-50 hidden group-hover:block w-60 rounded-lg border bg-popover text-popover-foreground shadow-xl p-3 text-xs">
+                <div className="flex justify-between py-1">
+                  <span className="text-muted-foreground">Total AI Cost</span>
+                  <span className="font-medium tabular-nums">
+                    ${costBreakdown.aiCost.toFixed(3)}
+                  </span>
+                </div>
+                <div className="flex justify-between py-1">
+                  <span className="text-muted-foreground">Total Search Cost</span>
+                  <span className="font-medium tabular-nums">
+                    ${costBreakdown.searchCost.toFixed(3)}
+                  </span>
+                </div>
+                <div className="border-t border-border my-1.5" />
+                <div className="flex justify-between py-1">
+                  <span className="font-semibold">Total</span>
+                  <span className="font-semibold tabular-nums text-primary">
+                    ${costBreakdown.total.toFixed(3)}
+                  </span>
+                </div>
+              </div>
+            </div>
           )}
           <Tabs
             value={activeTab}

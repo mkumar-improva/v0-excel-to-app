@@ -98,6 +98,11 @@ export function ResponseViewer({ data, rawJson, onApprove, onReject, onReiterate
 
     const COST_PER_MILLION_TOKENS = 2.00
 
+    // Parallel Task API (base-fast) is billed per request, not per token.
+    // base-fast = $10 per 1,000 requests => $0.01 per generation. One run per response.
+    // If your Parallel dashboard shows a different base-fast rate, change this value.
+    const PARALLEL_COST_PER_REQUEST = 0.01
+
     function calculateCost(totalTokens: number): number {
         return (totalTokens / 1_000_000) * COST_PER_MILLION_TOKENS
     }
@@ -168,9 +173,21 @@ export function ResponseViewer({ data, rawJson, onApprove, onReject, onReiterate
                                 </span>
                             </div>
                             <div className="flex flex-col">
-                                <span className="text-xs text-muted-foreground text-center">Cost</span>
+                                <span className="text-xs text-muted-foreground text-center">AI Cost</span>
                                 <span className="text-xs font-medium text-primary">
                                     ${calculateCost(tokenUsage.totalTokens).toFixed(3)}
+                                </span>
+                            </div>
+                            <div className="flex flex-col">
+                                <span className="text-xs text-muted-foreground text-center">Search Cost</span>
+                                <span className="text-xs font-medium text-primary">
+                                    ${PARALLEL_COST_PER_REQUEST.toFixed(3)}
+                                </span>
+                            </div>
+                            <div className="flex flex-col">
+                                <span className="text-xs text-muted-foreground text-center">Total</span>
+                                <span className="text-xs font-semibold text-primary">
+                                    ${(calculateCost(tokenUsage.totalTokens) + PARALLEL_COST_PER_REQUEST).toFixed(3)}
                                 </span>
                             </div>
                         </div>
